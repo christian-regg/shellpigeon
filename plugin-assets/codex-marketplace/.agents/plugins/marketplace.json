@@ -1,0 +1,20 @@
+{
+  "name": "agent-session-messaging",
+  "interface": {
+    "displayName": "ShellPigeon"
+  },
+  "plugins": [
+    {
+      "name": "agent-session-messaging",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agent-session-messaging"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

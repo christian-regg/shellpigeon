@@ -1,0 +1,55 @@
+{
+  "name": "agent-session-messaging",
+  "version": "0.4.0-preview.7",
+  "private": true,
+  "type": "module",
+  "description": "ShellPigeon: local messaging between Claude Code and Codex sessions, with optional durable mailboxes (Windows preview).",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/bundle.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test build/tests/*.test.js",
+    "demo": "npm run build && node scripts/demo.mjs",
+    "broker": "node build/src/cli.js broker",
+    "doctor": "node build/src/cli.js doctor",
+    "host:probe": "npm run build && node scripts/probe-hosts.mjs",
+    "session:claude": "node scripts/launch-session.mjs claude",
+    "session:codex": "node scripts/launch-session.mjs codex",
+    "package": "npm run build && node scripts/package.mjs",
+    "host:installed": "node scripts/probe-installed.mjs",
+    "native:discover": "npm run build && node scripts/probe-native-discovery.mjs",
+    "native:claude": "npm run build && node scripts/probe-native-claude.mjs",
+    "native:codex": "npm run build && node scripts/probe-native-codex.mjs",
+    "native:socket": "npm run build && node scripts/probe-native-socket.mjs",
+    "peer": "node build/src/peer-cli.js",
+    "native:roundtrip": "npm run build && node scripts/probe-peer-roundtrip.mjs",
+    "package:verify": "node scripts/probe-package-install.mjs",
+    "publication:audit": "node scripts/audit-publication.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
+    "source:archive": "node scripts/export-source.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.3",
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "ws": "8.21.3"
+  },
+  "displayName": "ShellPigeon",
+  "artifactName": "shellpigeon",
+  "license": "MIT",
+  "homepage": "https://github.com/christian-regg/shellpigeon#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/christian-regg/shellpigeon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/christian-regg/shellpigeon/issues"
+  }
+}

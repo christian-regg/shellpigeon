@@ -1,0 +1,16 @@
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {createHash} from 'node:crypto';
+const run=promisify(execFile);
+const git=async(...args)=>(await run('git',args,{encoding:'utf8',maxBuffer:1024*1024})).stdout.trim();
+if(await git('status','--porcelain'))throw new Error('Commit the reviewed source changes before exporting a release snapshot.');
+const metadata=JSON.parse(await readFile('package.json','utf8'));
+const root=resolve('artifacts/release');await mkdir(root,{recursive:true});
+const name=metadata.artifactName+'-'+metadata.version+'-source.zip';
+const path=join(root,name);
+await git('archive','--format=zip','--prefix='+metadata.artifactName+'/','--output='+path,'HEAD');
+await writeFile(path+'.sha256',createHash('sha256').update(await readFile(path)).digest('hex')+'  '+name+'\n');
+await writeFile(path+'.json',JSON.stringify({displayName:metadata.displayName,version:metadata.version,commit:await git('rev-parse','HEAD'),historyIncluded:false,projectLicense:metadata.license??'pending'},null,2)+'\n');
+console.log(path);

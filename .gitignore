@@ -1,0 +1,15 @@
+node_modules/
+build/
+.cache/
+.bridge/
+artifacts/
+plugins/**/dist/
+plugins/**/skills/
+plugins/**/setup.cjs
+plugins/**/setup-listener.ps1
+*.sqlite*
+*.db*
+.env
+.env.*
+!.env.example
+*.log

@@ -1,0 +1,20 @@
+{
+  "name": "agent-session-messaging",
+  "version": "0.4.0-preview.7",
+  "description": "ShellPigeon: local messaging between Claude Code and Codex sessions, with optional durable mailboxes (Windows preview).",
+  "author": {
+    "name": "Christian"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "ShellPigeon",
+    "shortDescription": "Local messaging between Claude Code and Codex sessions.",
+    "longDescription": "Discover ordinary Windows sessions, send through Claude IPC or Codex native delegation when reachable, with an explicit Codex queue fallback. Durable pull mailboxes remain available.",
+    "developerName": "Christian",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Help me exchange messages with another local session."
+  },
+  "license": "MIT"
+}
