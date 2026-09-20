@@ -8,15 +8,21 @@ import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {connectCodex} from '../build/src/native-codex.js';
 import {resolveHostCommand} from '../build/src/host-command.js';
+import {verifyRelease} from '../build/src/distribution.js';
+import {downloadReleasedArchive} from './released-archive.mjs';
 
 // Install into fresh child-process profiles. Never install into the user's profiles.
 const runFile = promisify(execFile);
-const {values} = parseArgs({options: {python: {type: 'string'}, 'plugin-creator': {type: 'string'}, 'native-roundtrip': {type: 'boolean'}}});
+const {values} = parseArgs({options: {python: {type: 'string'}, 'plugin-creator': {type: 'string'}, 'native-roundtrip': {type: 'boolean'}, 'from-release': {type: 'string'}, 'to-release': {type: 'string'}}});
 const metadata = JSON.parse(await readFile('package.json', 'utf8'));
-const release = resolve('artifacts/release', metadata.version);
-const archive = resolve('artifacts/release', metadata.artifactName+'-'+metadata.version+(process.platform==='win32' ? '-windows.zip' : '-linux.tar.gz'));
+const publishedUpgrade = Boolean(values['from-release'] || values['to-release']);
+if (publishedUpgrade && (!values['from-release'] || !values['to-release'] || values['from-release'] === values['to-release'])) throw new Error('Use distinct --from-release and --to-release versions together.');
+if (publishedUpgrade && values['native-roundtrip']) throw new Error('Published upgrade checks do not start model turns.');
+const targetVersion = values['to-release'] ?? metadata.version;
+let release = resolve('artifacts/release', metadata.version);
+let archive = resolve('artifacts/release', metadata.artifactName+'-'+metadata.version+(process.platform==='win32' ? '-windows.zip' : '-linux.tar.gz'));
 const tar = process.platform === 'win32' ? 'tar.exe' : 'tar';
-for (const path of ['codex-marketplace/plugins/agent-session-messaging/dist/peer.cjs', 'claude-marketplace/plugins/agent-session-messaging/dist/peer.cjs']) await stat(join(release, path));
+if (!publishedUpgrade) for (const path of ['codex-marketplace/plugins/agent-session-messaging/dist/peer.cjs', 'claude-marketplace/plugins/agent-session-messaging/dist/peer.cjs']) await stat(join(release, path));
 const commands = {codex: await resolveHostCommand('codex'), claude: await resolveHostCommand('claude')};
 const root = await mkdtemp(join(tmpdir(), 'asm-package-ü spaced-'));
 const workspace = join(root, 'workspace');
@@ -27,7 +33,7 @@ const marketRoot = join(distribution, 'codex-marketplace');
 const sourceRoot = join(marketRoot, 'plugins/agent-session-messaging');
 const codexMarket = 'agent-session-messaging';
 const claudeMarket = 'agent-session-messaging';
-const report = {testedAt: new Date().toISOString(), version: metadata.version, modelCalls: 0,
+const report = {testedAt: new Date().toISOString(), version: targetVersion, modelCalls: 0,
   isolatedProfiles: true, injectedMcpConfig: false, nativeDeliveryTested: false, checks: {}};
 let rpc, installedCodexRoot, installedClaudeRoot;
 for (const dir of [workspace, codexHome, claudeHome]) await mkdir(dir, {recursive: true});
@@ -44,9 +50,9 @@ function assertWithin(child, parent) {
   assert.ok(suffix && suffix !== '..' && !suffix.startsWith('..' + sep) && !isAbsolute(suffix), 'Test path escaped its isolated root.');
 }
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-async function bundleCheck(host, installed) {
+async function bundleCheck(host, installed, expectedRelease = release, expectedVersion = targetVersion) {
   assertWithin(await realpath(installed), await realpath(root));
-  const source = host === 'codex' ? join(release, 'codex-marketplace/plugins/agent-session-messaging') : join(release, 'claude-marketplace/plugins/agent-session-messaging');
+  const source = host === 'codex' ? join(expectedRelease, 'codex-marketplace/plugins/agent-session-messaging') : join(expectedRelease, 'claude-marketplace/plugins/agent-session-messaging');
   for (const file of ['dist/peer.cjs', 'dist/mcp.cjs', 'dist/broker.cjs', 'skills/session-messaging/SKILL.md', 'skills/session-messaging/references/durable-mailboxes.md', 'skills/session-messaging/references/codex-listener.md']) {
     assert.equal(digest(await readFile(join(installed, file))), digest(await readFile(join(source, file))), 'Installed file differs: ' + file);
   }
@@ -64,52 +70,29 @@ async function bundleCheck(host, installed) {
   const diagnosis = JSON.parse(await run(process.execPath, [helper, 'doctor']));
   assert.ok(Array.isArray(diagnosis.codexEndpoints));
   // Discovery may observe real explicit sockets, but it never starts/resumes/sends a turn.
-  return {version: metadata.version, installedFilesMatch: true, skillRelativeHelper: true, helperDoctor: true};
+  return {version: expectedVersion, installedFilesMatch: true, skillRelativeHelper: true, helperDoctor: true};
 }
 async function eventually(fn, label) {
   const deadline = Date.now() + 20_000;
   do { const value = await fn(); if (value) return value; await delay(300); } while (Date.now() < deadline);
   throw new Error('Timed out: ' + label);
 }
-try {
-  report.hosts = {codex: await cli('codex', ['--version']), claude: await cli('claude', ['--version']), node: process.version};
-  console.log('Extracting release archive and installing into isolated profiles.');
-  await mkdir(distribution);
-  await run(tar, ['-x','-f',archive,'-C',distribution]);
-  // Synthetic older release version exercises host update caches without a model turn.
-  const prior=JSON.parse(await readFile(join(distribution,'release.json'),'utf8'));
-  prior.version='0.4.0-preview.0';
-  for (const file of ['codex-marketplace/plugins/agent-session-messaging/.codex-plugin/plugin.json','claude-marketplace/plugins/agent-session-messaging/.claude-plugin/plugin.json']) {
-    const value=JSON.parse(await readFile(join(distribution,file),'utf8'));value.version=prior.version;
-    const bytes=JSON.stringify(value,null,2)+'\n';await writeFile(join(distribution,file),bytes);prior.files[file]=digest(bytes);
-  }
-  await writeFile(join(distribution,'release.json'),JSON.stringify(prior,null,2)+'\n');
-  const installer=join(distribution,'install.cjs');
-  const preflight=JSON.parse(await run(process.execPath,[installer,'--check']));
-  assert.equal(preflight.mode,'check');
-  assert.ok(preflight.plans.every(p=>!p.installed));
-  const first=JSON.parse(await run(process.execPath,[installer]));
-  assert.deepEqual(first.completed,['codex','claude']);
-  const repeated=JSON.parse(await run(process.execPath,[installer]));
-  assert.deepEqual(repeated.completed,['codex','claude']);
-  await run(tar, ['-x','-f',archive,'-C',distribution]);
-  const updated=JSON.parse(await run(process.execPath,[installer]));
-  assert.equal(updated.version,metadata.version);
-  report.checks.installer={archiveExtracted:true,preflight:true,firstInstall:true,repeatedInstall:true,upgradeFromSyntheticPriorVersion:true};
+async function checkInstalledHosts(expectedVersion, expectedRelease) {
+  const checks = {};
   const installed = JSON.parse(await cli('codex', ['plugin', 'list', '--marketplace', codexMarket, '--json']));
   const codexPlugin = installed.installed.find(p => p.pluginId === 'agent-session-messaging@' + codexMarket);
   assert.ok(codexPlugin?.enabled);
-  assert.equal(codexPlugin.version, metadata.version);
+  assert.equal(codexPlugin.version, expectedVersion);
 
   const claudePlugin = JSON.parse(await cli('claude', ['plugin', 'list', '--json'])).find(p => p.id === 'agent-session-messaging@' + claudeMarket);
   assert.ok(claudePlugin?.enabled);
-  assert.equal(claudePlugin.version, metadata.version);
+  assert.equal(claudePlugin.version, expectedVersion);
   installedClaudeRoot = claudePlugin.installPath;
-  report.checks.claude = await bundleCheck('claude', installedClaudeRoot);
+  checks.claude = await bundleCheck('claude', installedClaudeRoot, expectedRelease, expectedVersion);
   const status = await cli('claude', ['mcp', 'list']);
   const ours = status.split(/\r?\n/).find(line => line.includes('plugin:agent-session-messaging:session-messaging:'));
   assert.match(ours ?? '', /Connected/);
-  report.checks.claude.mcpConnected = true;
+  checks.claude.mcpConnected = true;
   console.log('Claude installation and bundled helper passed. Checking Codex host loading.');
 
   rpc = await connectCodex({args: ['app-server', '--listen', 'stdio://'], env});
@@ -122,8 +105,8 @@ try {
   assert.ok(skill?.enabled, 'Codex did not load the installed preview skill.');
   const installedRoot = resolve(dirname(skill.path), '../..');
   installedCodexRoot = installedRoot;
-  report.checks.codex = await bundleCheck('codex', installedRoot);
-  report.checks.codex.skillLoadedByHost = true;
+  checks.codex = await bundleCheck('codex', installedRoot, expectedRelease, expectedVersion);
+  checks.codex.skillLoadedByHost = true;
   const tools = await eventually(async () => {
     const inventory = await rpc.call('mcpServerStatus/list', {threadId, limit: 100});
     const server = inventory.data?.find(s => s.name === 'session-messaging' || s.name.includes('agent-session-messaging'));
@@ -132,8 +115,64 @@ try {
     return names.length ? names.sort() : null;
   }, 'Codex MCP tools');
   assert.deepEqual(tools, ['session_register','sessions_list','message_send','inbox_read','message_reply','message_ack','message_status'].sort());
-  report.checks.codex.toolNames = tools;
+  checks.codex.toolNames = tools;
   await rpc.call('thread/unsubscribe', {threadId});
+  return checks;
+}
+try {
+  report.hosts = {codex: await cli('codex', ['--version']), claude: await cli('claude', ['--version']), node: process.version};
+  console.log('Extracting release archive and installing into isolated profiles.');
+  await mkdir(distribution);
+  let firstArchive = archive;
+  if (publishedUpgrade) {
+    // Finish both downloads before cleanup, even when one fails.
+    const downloads = await Promise.allSettled([values['from-release'], values['to-release']].map(version => downloadReleasedArchive(version, join(root, 'archives'))));
+    for (const result of downloads) if (result.status === 'rejected') throw result.reason;
+    const downloaded = downloads.map(result => result.value);
+    report.releasedArchives = downloaded.map(({archive: unused, ...source}) => source);
+    firstArchive = downloaded[0].archive;
+    archive = downloaded[1].archive;
+    release = distribution;
+  }
+  await run(tar, ['-x','-f',firstArchive,'-C',distribution]);
+  // Synthetic older release version exercises host update caches without a model turn.
+  const prior=JSON.parse(await readFile(join(distribution,'release.json'),'utf8'));
+  if (publishedUpgrade) {
+    assert.equal((await verifyRelease(distribution)).version, values['from-release']);
+  } else {
+    prior.version='0.4.0-preview.0';
+    for (const file of ['codex-marketplace/plugins/agent-session-messaging/.codex-plugin/plugin.json','claude-marketplace/plugins/agent-session-messaging/.claude-plugin/plugin.json']) {
+      const value=JSON.parse(await readFile(join(distribution,file),'utf8'));value.version=prior.version;
+      const bytes=JSON.stringify(value,null,2)+'\n';await writeFile(join(distribution,file),bytes);prior.files[file]=digest(bytes);
+    }
+    await writeFile(join(distribution,'release.json'),JSON.stringify(prior,null,2)+'\n');
+  }
+  const installer=join(distribution,'install.cjs');
+  const preflight=JSON.parse(await run(process.execPath,[installer,'--check']));
+  assert.equal(preflight.mode,'check');
+  assert.ok(preflight.plans.every(p=>!p.installed));
+  const first=JSON.parse(await run(process.execPath,[installer]));
+  assert.deepEqual(first.completed,['codex','claude']);
+  assert.equal(first.version, prior.version);
+  if (publishedUpgrade) {
+    report.beforeUpgrade = await checkInstalledHosts(values['from-release'], distribution);
+    await rpc.close(); rpc = undefined;
+  }
+  const repeated=JSON.parse(await run(process.execPath,[installer]));
+  assert.deepEqual(repeated.completed,['codex','claude']);
+  await mkdir(join(root,'broker-data'),{recursive:true});
+  await writeFile(join(root,'broker-data','preserve.txt'),'private data sentinel');
+  await run(tar, ['-x','-f',archive,'-C',distribution]);
+  assert.equal((await verifyRelease(distribution)).version, targetVersion);
+  const updatePreflight=JSON.parse(await run(process.execPath,[installer,'--check']));
+  assert.ok(updatePreflight.plans.every(plan=>plan.installed && plan.previousVersion===prior.version));
+  const updated=JSON.parse(await run(process.execPath,[installer]));
+  assert.equal(updated.version,targetVersion);
+  assert.deepEqual(updated.completed,['codex','claude']);
+  assert.equal(await readFile(join(root,'broker-data','preserve.txt'),'utf8'),'private data sentinel');
+  report.checks.installer={archiveExtracted:true,preflight:true,firstInstall:true,repeatedInstall:true,updatePreflight:true,privateDataPreservedDuringUpgrade:true,
+    ...(publishedUpgrade ? {upgradeFromPublishedVersion:values['from-release'],upgradeToPublishedVersion:targetVersion} : {upgradeFromSyntheticPriorVersion:true})};
+  Object.assign(report.checks, await checkInstalledHosts(targetVersion, release));
   if (values['native-roundtrip']) {
     await rpc.close(); rpc = undefined;
     const {runInstalledNativeRoundtrip} = await import('./probe-installed-native-roundtrip.mjs');
@@ -146,8 +185,6 @@ try {
   await run(process.execPath,[join(distribution,'install.cjs'),'--host','codex']);
   const repaired=JSON.parse(await readFile(join(sourceRoot,'.mcp.json'),'utf8'));
   assert.equal(repaired.mcpServers['session-messaging'].command,process.execPath);
-  await mkdir(join(root,'broker-data'),{recursive:true});
-  await writeFile(join(root,'broker-data','preserve.txt'),'private data sentinel');
   const removed=JSON.parse(await run(process.execPath,[join(distribution,'install.cjs'),'--uninstall']));
   assert.deepEqual(removed.completed,['codex','claude']);
   assert.equal(await readFile(join(root,'broker-data','preserve.txt'),'utf8'),'private data sentinel');
@@ -172,6 +209,6 @@ try {
     report.cleanedUp = true;
   } catch (error) { report.cleanedUp = false; report.cleanupError = error.message; process.exitCode = 1; report.passed = false; }
   await mkdir('artifacts/native-delivery', {recursive: true});
-  await writeFile(values['native-roundtrip'] ? 'artifacts/native-delivery/installed-roundtrip.json' : 'artifacts/package-install-probe.json', JSON.stringify(report, null, 2) + '\n');
+  await writeFile(values['native-roundtrip'] ? 'artifacts/native-delivery/installed-roundtrip.json' : publishedUpgrade ? 'artifacts/release-upgrade-probe.json' : 'artifacts/package-install-probe.json', JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
 }
