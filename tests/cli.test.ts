@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 
-test('CLI publishes discoverable broker, rejects a second owner, and recovers after explicit stale-lock cleanup', {timeout: 20_000}, async () => {
+test('CLI publishes discoverable broker, rejects a second owner, and recovers after explicit stale-lock cleanup', {timeout: 60_000}, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'asm-cli-test-'));
   const cli = resolve('build/src/cli.js');
   const children: ChildProcess[] = [];
@@ -17,7 +17,8 @@ test('CLI publishes discoverable broker, rejects a second owner, and recovers af
     children.push(child);
     const lines = createInterface({input: child.stdout!});
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { lines.close(); reject(new Error('CLI startup timeout')); }, 5000);
+      // Shared CI runners can delay process startup while other test files spawn children.
+      const timer = setTimeout(() => { lines.close(); reject(new Error('CLI startup timeout')); }, 15_000);
       child.once('error', error => { clearTimeout(timer); reject(error); });
       child.once('exit', code => { clearTimeout(timer); reject(new Error('CLI exited during startup: ' + code)); });
       lines.once('line', line => {

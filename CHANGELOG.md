@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Prepare verified Windows/Linux release drafts from version tags, with isolated installation checks on both CI platforms, matching source/package commits and manual publication.
+
 ## 0.5.0-preview.1 — 2026-09-20
 
 - Add Linux process discovery using same-user /proc identities and PID namespaces; verify Claude registry identities and actual owned Unix sockets before delivery.

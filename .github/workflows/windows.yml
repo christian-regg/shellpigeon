@@ -1,4 +1,4 @@
-name: Windows and Linux preview checks
+name: Windows, Linux and release drafts
 on:
   push:
   pull_request:
@@ -15,24 +15,40 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.16.0
           cache: npm
+      - name: Check version, changelog and release tag
+        run: node scripts/release-automation.mjs check
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run publication:audit
       - run: node scripts/package.mjs
       - run: npm run release:verify -- --require-license
-      - name: Install pinned Linux host CLIs into a temporary prefix
-        if: runner.os == 'Linux'
+      - name: Install pinned host CLIs into a temporary prefix
+        shell: bash
         run: |
           npm install --prefix "$RUNNER_TEMP/shellpigeon-hosts" --ignore-scripts --no-audit --no-fund @openai/codex@0.155.1 @anthropic-ai/claude-code@2.1.278
           node "$RUNNER_TEMP/shellpigeon-hosts/node_modules/@anthropic-ai/claude-code/install.cjs"
           echo "$RUNNER_TEMP/shellpigeon-hosts/node_modules/.bin" >> "$GITHUB_PATH"
-      - name: Verify Linux package installation without model calls
-        if: runner.os == 'Linux'
+      - name: Select Claude's native Windows entry point
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nativeClaude = Join-Path $env:RUNNER_TEMP "shellpigeon-hosts/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+          if (!(Test-Path -LiteralPath $nativeClaude -PathType Leaf)) { throw "Pinned Claude executable is missing" }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "CLAUDE_BIN=$nativeClaude" -Encoding utf8
+      - name: Verify package installation without model calls
         run: npm run package:verify
+      - name: Export source archive from this commit
+        if: runner.os == 'Linux'
+        run: npm run source:archive
+      - name: Record exact platform files and commit
+        run: node scripts/release-automation.mjs record
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-${{ matrix.os }}
@@ -40,7 +56,59 @@ jobs:
             artifacts/release/*.zip
             artifacts/release/*.tar.gz
             artifacts/release/*.sha256
+            artifacts/release/*.json
           if-no-files-found: error
           retention-days: 14
-# Real host installation probes run locally in isolated profiles, without model calls.
-# This workflow does not publish a GitHub Release or run authenticated model turns.
+  candidate:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.16.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: preview-*
+          merge-multiple: true
+          path: artifacts/release-parts
+      - name: Verify and assemble all six release assets
+        run: node scripts/release-automation.mjs assemble
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate
+          path: artifacts/release-candidate/
+          if-no-files-found: error
+          retention-days: 14
+  draft:
+    needs: candidate
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'christian-regg/shellpigeon'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: release-draft-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.16.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-candidate
+          path: artifacts/release-candidate
+      - name: Create or complete the release draft without publishing
+        run: node scripts/release-automation.mjs draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+# Branches, PRs and manual runs exercise the full candidate path with read-only access.
+# Only a pushed version tag may create a draft. Publishing remains a human action.

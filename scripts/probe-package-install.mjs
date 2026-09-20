@@ -24,7 +24,9 @@ let archive = resolve('artifacts/release', metadata.artifactName+'-'+metadata.ve
 const tar = process.platform === 'win32' ? 'tar.exe' : 'tar';
 if (!publishedUpgrade) for (const path of ['codex-marketplace/plugins/agent-session-messaging/dist/peer.cjs', 'claude-marketplace/plugins/agent-session-messaging/dist/peer.cjs']) await stat(join(release, path));
 const commands = {codex: await resolveHostCommand('codex'), claude: await resolveHostCommand('claude')};
-const root = await mkdtemp(join(tmpdir(), 'asm-package-ü spaced-'));
+// Host inventories use canonical paths; CI TEMP may contain a Windows DOS alias.
+const temporaryDirectory = await realpath(tmpdir());
+const root = await mkdtemp(join(temporaryDirectory, 'asm-package-ü spaced-'));
 const workspace = join(root, 'workspace');
 const codexHome = join(root, 'codex-home');
 const claudeHome = join(root, 'claude-config');
@@ -202,8 +204,8 @@ try {
   // No mailbox tool was invoked; no broker should have been started even transiently.
   try { await stat(join(root, 'broker-data/broker.lock')); report.unexpectedBroker = true; report.passed = false; process.exitCode = 1; }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
-  assertWithin(root, tmpdir());
-  assert.ok(root.startsWith(join(tmpdir(), 'asm-package-ü spaced-')));
+  assertWithin(root, temporaryDirectory);
+  assert.ok(root.startsWith(join(temporaryDirectory, 'asm-package-ü spaced-')));
   try {
     await rm(root, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
     report.cleanedUp = true;
