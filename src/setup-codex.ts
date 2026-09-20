@@ -15,7 +15,7 @@ async function main() {
       'session-messaging': {
         command: process.execPath,
         args: [entry, '--provider', 'codex'],
-        env_vars: ['LOCALAPPDATA', 'USERPROFILE', 'HOME', 'BRIDGE_DATA_DIR', 'BRIDGE_WORKSPACE', 'BRIDGE_AUTOSTART'],
+        env_vars: ['LOCALAPPDATA', 'XDG_DATA_HOME', 'USERPROFILE', 'HOME', 'BRIDGE_DATA_DIR', 'BRIDGE_WORKSPACE', 'BRIDGE_AUTOSTART'],
       },
     },
   }, null, 2) + '\n');

@@ -2,11 +2,11 @@
 
 **Local messaging between Claude Code and Codex sessions.**
 
-Exchange messages between ordinary local CLI sessions on Windows.
+Exchange messages between ordinary local CLI sessions on Windows and Linux (including Ubuntu under WSL 2).
 
 Start your CLIs as usual, ask to list the other sessions, then send a message to an exact address from that list. No extra terminal, special launcher or mailbox registration is needed for this workflow.
 
-**Status: 0.4.0-preview.7.** This is a Windows preview, licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
+**Status: 0.5.0-preview.1 in development.** This is a Windows and Linux preview, licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
 
 ## Delivery
 
@@ -20,13 +20,13 @@ Messages include the exact return address. A transport receipt does not prove th
 
 ## Install
 
-ShellPigeon is the public name. The plugin and marketplace IDs remain `agent-session-messaging` for compatibility with earlier previews; installed skill names and private data paths stay the same. Release archives use `shellpigeon-<version>-windows.zip`.
+ShellPigeon is the public name. The plugin and marketplace IDs remain `agent-session-messaging` for compatibility with earlier previews; installed skill names and private data paths stay the same. Release archives use `shellpigeon-<version>-windows.zip` and `shellpigeon-<version>-linux.tar.gz`.
 
-Use the Windows ZIP from [GitHub Releases](https://github.com/christian-regg/shellpigeon/releases) and follow [INSTALL.md](INSTALL.md). Requirements: Node.js 22.16+, Codex CLI 0.154.0+ and/or Claude Code 2.1.278+, installed separately. Keep the extracted directory at a permanent location:
+Use the Windows ZIP or Linux tar.gz from [GitHub Releases](https://github.com/christian-regg/shellpigeon/releases) and follow [INSTALL.md](INSTALL.md). Requirements: Node.js 22.16+, Codex CLI 0.154.0+ and/or Claude Code 2.1.278+, installed separately. Keep the extracted directory at a permanent location:
 
 ```powershell
-node .\install.cjs --check
-node .\install.cjs
+node ./install.cjs --check
+node ./install.cjs
 ```
 
 Use `--host codex` or `--host claude` to select one host. The installer uses each host's native plugin commands. It detects conflicting previous installations and does not silently add duplicate plugins. Restart your CLIs after installation or updates.
@@ -47,15 +47,15 @@ A fresh empty Codex conversation may not be discoverable via the queue until its
 The installed skill locates the bundled helper. For direct diagnosis from an installed plugin directory:
 
 ```powershell
-node .\dist\peer.cjs list --all
-node .\dist\peer.cjs doctor
+node ./dist/peer.cjs list --all
+node ./dist/peer.cjs doctor
 ```
 
 Only exact addresses, exact IDs or unique exact names are accepted. Peer messages do not grant user permissions. Claude IPC replies arrive directly when policy allows them; normal peer messaging does not use mailbox polling.
 
 ## Scope and limits
 
-- Native Windows, one operating-system user, local sessions. macOS, Linux, WSL and remote hosts are not supported by this preview.
+- Native Windows or Linux, one operating-system user, local sessions. Under WSL 2 both CLIs must run inside the same Linux distribution. Windows-to-WSL, cross-distribution, macOS and remote-host messaging are outside this preview.
 - A Codex writer lock identifies a queue candidate; it may belong to a closed session. Resume a closed or interrupted CLI before expecting queued work to run.
 - A saved `vscode` source can mean Desktop/editor or a CLI attached to an app-server; it does not prove the current UI. Desktop queue dispatch is unverified.
 - Native Codex delivery requires an existing endpoint that owns the thread. The helper does not start a daemon or adopt an already running embedded CLI.
@@ -69,21 +69,21 @@ The earlier durable mailbox tools remain available as a separate optional workfl
 From the source checkout:
 
 ```powershell
-npm.cmd ci --ignore-scripts
-npm.cmd test
-npm.cmd run package
-npm.cmd run release:verify
-npm.cmd run package:verify
+npm ci --ignore-scripts
+npm test
+npm run package
+npm run release:verify
+npm run package:verify
 ```
 
 The last command needs both host CLIs but no model calls. It extracts the ZIP into temporary directories, exercises the real installer and cleans up the isolated host profiles. It does not update personal installations. Add `-- --native-roundtrip` only when explicitly choosing live model tests.
 
-- **52 automated tests** cover messaging, identity, queue/native failure handling, storage and installation guards.
-- ZIP installation, repeat install, a synthetic prior-version update, repair and uninstall passed with Codex 0.155.1, Claude Code 2.1.278 and Node 22.16.0 on Windows.
-- Earlier live probes cover native idle/busy Codex delivery and exact Claude return routing. An ordinary CLI roundtrip using Codex queue and Claude IPC was also confirmed by the user.
-- [Detailed evidence and limits](docs/native-integration.de.md); [release preparation](docs/release-preparation.de.md).
+- **57 automated tests** cover messaging, identity, queue/native failure handling, storage and installation guards.
+- Archive installation, repeat install, a synthetic prior-version update, repair and uninstall passed with Codex 0.155.1, Claude Code 2.1.278 and Node 22.16.0 on Windows and Ubuntu/WSL 2.
+- Installed-package live probes on Windows and Linux cover native idle/busy Codex delivery and exact Claude return routing. An ordinary CLI roundtrip using Codex queue and Claude IPC was also confirmed by the user.
+- [Linux scope and verification](docs/linux-support.de.md); [Detailed evidence and limits](docs/native-integration.de.md); [release preparation](docs/release-preparation.de.md).
 
-`npm run publication:audit` checks intended source files and reachable Git history for a limited set of credential patterns. It is not a complete secret audit. [GitHub Actions](https://github.com/christian-regg/shellpigeon/actions/workflows/windows.yml) runs the Windows test/build checks without signed-in CLIs or model calls.
+`npm run publication:audit` checks intended source files and reachable Git history for a limited set of credential patterns. It is not a complete secret audit. [GitHub Actions](https://github.com/christian-regg/shellpigeon/actions/workflows/windows.yml) runs the Windows and Ubuntu test/build checks without signed-in CLIs or model calls.
 
 Release artifacts include `release.json` file hashes, bundled third-party license texts and an archive SHA-256. Checksums detect corruption and are not publisher signatures. No Node or host CLI binaries are redistributed.
 

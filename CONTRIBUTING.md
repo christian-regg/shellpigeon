@@ -1,6 +1,6 @@
 # Contributing
 
-The initial target is native Windows, ordinary Claude Code and Codex CLI sessions under one user. Please discuss new hosts, background services or changes to delivery semantics before broadening that scope.
+The target is Windows and Linux, ordinary Claude Code and Codex CLI sessions under one user. WSL 2 tests use both hosts inside the same Linux distribution. Please discuss new hosts, background services or changes to delivery semantics before broadening that scope.
 
 Use Node.js 22.16 or newer. Run `npm ci --ignore-scripts`, then `npm test`, `npm run package` and `npm run release:verify`. Real-host installation checks use `npm run package:verify` in temporary profiles and require both CLIs. Live native roundtrip probes start models and must be chosen explicitly.
 

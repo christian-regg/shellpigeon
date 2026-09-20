@@ -1,4 +1,4 @@
-name: Windows preview checks
+name: Windows and Linux preview checks
 on:
   push:
   pull_request:
@@ -7,7 +7,11 @@ permissions:
   contents: read
 jobs:
   verify:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -20,11 +24,21 @@ jobs:
       - run: npm run publication:audit
       - run: node scripts/package.mjs
       - run: npm run release:verify -- --require-license
+      - name: Install pinned Linux host CLIs into a temporary prefix
+        if: runner.os == 'Linux'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/shellpigeon-hosts" --ignore-scripts --no-audit --no-fund @openai/codex@0.155.1 @anthropic-ai/claude-code@2.1.278
+          node "$RUNNER_TEMP/shellpigeon-hosts/node_modules/@anthropic-ai/claude-code/install.cjs"
+          echo "$RUNNER_TEMP/shellpigeon-hosts/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Verify Linux package installation without model calls
+        if: runner.os == 'Linux'
+        run: npm run package:verify
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: windows-preview
+          name: preview-${{ matrix.os }}
           path: |
             artifacts/release/*.zip
+            artifacts/release/*.tar.gz
             artifacts/release/*.sha256
           if-no-files-found: error
           retention-days: 14

@@ -5,6 +5,8 @@ description: "ShellPigeon: list and message ordinary local Claude Code and Codex
 
 # ShellPigeon
 
+Supported environments are native Windows and Linux, including Ubuntu under WSL 2. Both peers must run under the same OS user and, on Linux, in the same PID namespace. In WSL, use Linux Node and Linux CLIs inside the same distribution; Windows-to-WSL and cross-distribution messaging are not supported.
+
 ## Ordinary sessions: default workflow
 
 Use this workflow for "list the other sessions", "send this to Codex/Claude", a received peer message, and its reply. Use the bundled `../../dist/peer.cjs`, resolved relative to this installed SKILL.md, through the host's shell tool. Node.js 22.16 or newer is required. No extra terminal, listener setup, manual mailbox registration or additional Codex installation is required.

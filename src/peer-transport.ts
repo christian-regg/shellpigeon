@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { connectCodex, delegatedTurn } from './native-codex.js';
-import { claudeRecord, smallJson, windowsProcesses, discoverCodexLocks, type Peer } from './peer-discovery.js';
+import { claudeRecord, smallJson, localProcesses, verifyClaudeSocket, discoverCodexLocks, type Peer } from './peer-discovery.js';
 import { resolveHostCommand } from './host-command.js';
 import { deliveryDetails, sessionKind, type DeliveryDetails, type SessionKind } from './peer-presentation.js';
 
@@ -29,10 +29,11 @@ export function peerMessage(source: Peer, summary: string, message: string, mess
 export async function sendClaude(target: Peer, source: Peer, body: string, messageId: string, timeout = 5000) {
   if (!target.registry || !target.socket) throw new Error('Missing registered Claude endpoint.');
   const record = await smallJson(target.registry);
-  const fresh = claudeRecord(record, await windowsProcesses(), target.registry);
+  const fresh = claudeRecord(record, await localProcesses(), target.registry);
   if (!fresh || fresh.id !== target.id || fresh.socket !== target.socket || fresh.processStart !== target.processStart) {
     throw new Error('Claude target changed or exited; no message sent.');
   }
+  await verifyClaudeSocket(fresh);
   const directory = dirname(target.registry);
   const keys = (await readdir(directory)).filter(name => new RegExp('^' + fresh.pid + '\\.[0-9a-f]{64}\\.key$').test(name));
   if (keys.length !== 1) throw new Error('Claude peer key is missing or ambiguous; no message sent.');

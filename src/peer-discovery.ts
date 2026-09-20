@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { connectCodex } from './native-codex.js';
+import { localProcesses, type ProcessRecord } from './peer-process.js';
+export { windowsProcesses, localProcesses, type ProcessRecord } from './peer-process.js';
 
 export const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type CodexSource = 'cli' | 'vscode' | 'exec' | 'appServer';
@@ -15,12 +15,10 @@ export interface Peer {
   codexSource?: CodexSource;
   pid?: number; processStart?: string; socket?: string; registry?: string;
 }
-export interface ProcessRecord { pid: number; ppid: number; name: string; command: string; started: string }
 export interface CodexEndpoint {
   socket: string; state: 'reachable' | 'missing' | 'unavailable'; userPeers: number;
 }
 export interface Discovery { peers: Peer[]; diagnostics: string[]; codexEndpoints: CodexEndpoint[] }
-const execute = promisify(execFile);
 export const codexHome = (env = process.env) => env.CODEX_HOME ?? join(homedir(), '.codex');
 export const claudeHome = (env = process.env) => env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude');
 export function sameDirectory(a: string, b: string) {
@@ -39,24 +37,29 @@ async function names(path: string) {
   try { return await readdir(path); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
 }
-export async function windowsProcesses(): Promise<ProcessRecord[]> {
-  if (process.platform !== 'win32') return [];
-  const script = "Get-CimInstance Win32_Process | Where-Object { $_.Name -in @('claude.exe','codex.exe','node.exe') } | ForEach-Object { try { $peerStarted=(Get-Process -Id $_.ProcessId -ErrorAction Stop).StartTime.ToUniversalTime().ToFileTimeUtc().ToString(); [pscustomobject]@{pid=[int]$_.ProcessId;ppid=[int]$_.ParentProcessId;name=$_.Name;command=$_.CommandLine;started=$peerStarted} } catch {} } | ConvertTo-Json -Compress";
-  const {stdout} = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {windowsHide: true, timeout: 10_000, maxBuffer: 4 * 1024 * 1024});
-  const value = stdout.trim() ? JSON.parse(stdout) : [];
-  return Array.isArray(value) ? value : [value];
-}
-export function claudeRecord(record: any, processes: ProcessRecord[], registry: string): Peer | null {
+export function claudeRecord(record: any, processes: ProcessRecord[], registry: string, platform: NodeJS.Platform = process.platform): Peer | null {
   if (!record || !uuid.test(record.sessionId ?? '') || !Number.isSafeInteger(record.pid) || record.peerProtocol !== 1 ||
-      typeof record.cwd !== 'string' || typeof record.procStart !== 'string' ||
-      !/^\\\\\.\\pipe\\(?:LOCAL\\)?cc-msg-[0-9a-f]{32}$/i.test(record.messagingSocketPath ?? '')) return null;
+      typeof record.cwd !== 'string' || typeof record.procStart !== 'string') return null;
+  const socket = record.messagingSocketPath;
+  if (typeof socket !== 'string' || (platform === 'win32'
+    ? !/^\\\\\.\\pipe\\(?:LOCAL\\)?cc-msg-[0-9a-f]{32}$/i.test(socket)
+    : platform !== 'linux' || !socket.startsWith('/') || !socket.endsWith('.sock') || socket.includes('\0'))) return null;
   const live = processes.find(p => p.pid === record.pid && p.started === record.procStart &&
-    (p.name.toLowerCase() === 'claude.exe' || /[/\\]@anthropic-ai[/\\]claude-code[/\\]/.test(p.command ?? '')));
+    (platform !== 'linux' || (typeof record.pidDomain === 'string' && p.pidDomain === record.pidDomain)) &&
+    (p.name.toLowerCase() === (platform === 'win32' ? 'claude.exe' : 'claude') ||
+      (platform === 'linux' && p.name === 'claude.exe') || /[/\\]@anthropic-ai[/\\]claude-code[/\\]/.test(p.command ?? '')));
   if (!live) return null;
   return {provider: 'claude', id: record.sessionId, address: 'claude:' + record.sessionId,
     name: typeof record.name === 'string' ? record.name : null, cwd: record.cwd,
     evidence: 'live-process', transport: 'claude-ipc', pid: record.pid, processStart: record.procStart,
-    socket: record.messagingSocketPath, registry};
+    socket, registry};
+}
+export async function verifyClaudeSocket(peer: Peer) {
+  if (process.platform !== 'linux') return;
+  const [socket, registry] = await Promise.all([lstat(peer.socket!), lstat(peer.registry!)]);
+  if (!socket.isSocket() || socket.isSymbolicLink() || socket.uid !== process.getuid!() || registry.uid !== socket.uid) {
+    throw new Error('Claude endpoint is not a Unix socket owned by the current user.');
+  }
 }
 export async function discoverClaude(processes: ProcessRecord[], env = process.env): Promise<Peer[]> {
   const directory = join(claudeHome(env), 'sessions');
@@ -68,7 +71,7 @@ export async function discoverClaude(processes: ProcessRecord[], env = process.e
       const record = await smallJson(registry);
       if (name !== record.pid + '.json') continue;
       const peer = claudeRecord(record, processes, registry);
-      if (peer) peers.push(peer);
+      if (peer) { await verifyClaudeSocket(peer); peers.push(peer); }
     } catch { /* A disappearing or invalid record is not a peer. */ }
   }
   return peers;
@@ -83,7 +86,15 @@ export function controlSockets(processes: ProcessRecord[], env = process.env): s
     found.add(env.ASM_CODEX_SOCKET);
   }
   for (const p of processes) {
-    if (p.name.toLowerCase() !== 'codex.exe') continue;
+    if (!['codex.exe', 'codex'].includes(p.name.toLowerCase())) continue;
+    if (p.argv) {
+      for (let i = 1; i < p.argv.length; i++) {
+        const argument = p.argv[i]!;
+        const value = ['--listen', '--remote'].includes(argument) ? p.argv[++i] : /^(?:--listen|--remote)=(.*)$/.exec(argument)?.[1];
+        if (value?.startsWith('unix://') && localAbsoluteSocket(value.slice(7))) found.add(value.slice(7));
+      }
+      continue;
+    }
     const regex = /(?:^|\s)--(?:listen|remote)(?:=|\s+)(?:"(unix:\/\/[^"\r\n]+)"|(unix:\/\/\S+))/g;
     for (const match of (p.command ?? '').matchAll(regex)) {
       const path = (match[1] ?? match[2]!).slice('unix://'.length);
@@ -153,10 +164,10 @@ export async function discoverPeers(options: {all?: boolean; cwd?: string; env?:
   const diagnostics: string[] = [];
   const codexEndpoints: CodexEndpoint[] = [];
   let processes: ProcessRecord[] = [];
-  try { processes = await windowsProcesses(); } catch (error) { diagnostics.push('Process discovery: ' + (error as Error).message); }
+  try { processes = await localProcesses(); } catch (error) { diagnostics.push('Process discovery: ' + (error as Error).message); }
   const peers: Peer[] = [];
   if (options.provider !== 'codex') {
-    if (process.platform !== 'win32') diagnostics.push('Claude process verification currently supports Windows only.');
+    if (!['win32', 'linux'].includes(process.platform)) diagnostics.push('Claude process verification supports Windows and Linux only.');
     else peers.push(...await discoverClaude(processes, env));
   }
   if (options.provider !== 'claude') {

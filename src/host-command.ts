@@ -1,4 +1,5 @@
-import { readFile, stat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, readFile, stat } from 'node:fs/promises';
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export type Host = 'claude' | 'codex';
@@ -62,6 +63,10 @@ export async function resolveHostCommand(host: Host, options: {
         }
         throw new Error('Unsupported launcher: ' + file + '. Set ' + variable +
           ' to the native executable or JavaScript entry point.');
+      }
+      if (!windows) {
+        try { await access(file, constants.X_OK); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === 'EACCES') continue; throw error; }
       }
       return {file, args: []};
     }

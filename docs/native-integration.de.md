@@ -1,5 +1,7 @@
 # ShellPigeon: native Sitzungen und Integrationsnachweise
 
+Aktueller Ausbau: **0.5.0-preview.1 ergänzt Linux/Ubuntu unter WSL 2**. Umfang und neue Nachweise stehen in [Linux-Unterstützung](linux-support.de.md). Die folgenden Windows-Ergebnisse bleiben historische Nachweise.
+
 Stand: 20. September 2026. Windows-Vorschau, Node.js ab 22.16.
 Preview.5 ergänzt den portablen Release-Installer, Paketprüfsummen und die
 Anleitung für leere Codex-Gespräche. [Release-Stand und Prüfungen](release-preparation.de.md).

@@ -8,8 +8,9 @@ import { PROTOCOL_VERSION } from './protocol.js';
 import { StateError, stateFileError } from './state-error.js';
 
 export function dataDirectory(): string {
-  const base = process.env.LOCALAPPDATA ?? (process.platform === 'win32'
-    ? join(homedir(), 'AppData', 'Local') : join(homedir(), '.local', 'share'));
+  const base = process.platform === 'win32'
+    ? process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
+    : process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share');
   return resolve(process.env.BRIDGE_DATA_DIR ?? join(base, 'AgentSessionMessaging'));
 }
 

@@ -1,5 +1,7 @@
 # Weg zur Produktionsreife
 
+Aktueller Ausbau: **0.5.0-preview.1 ergänzt Linux/Ubuntu unter WSL 2**. Umfang und neue Nachweise stehen in [Linux-Unterstützung](linux-support.de.md). Die folgenden Windows-Ergebnisse bleiben historische Nachweise.
+
 **Preview.7:** Der bei der Qualitätsprüfung gefundene Windows-Dateiaustauschfehler ist gezielt reproduziert und korrigiert. Zwei neue Regressionstests ergänzen die jetzt 52 Tests. [Nachweis und Grenzen](windows-file-replacement.de.md).
 
 **20. September: Schritte 3 und 4:** CLI-Stand gesichert; Preview.5 ergänzt
