@@ -6,7 +6,7 @@ Exchange messages between ordinary local CLI sessions on Windows and Linux (incl
 
 Start your CLIs as usual, ask to list the other sessions, then send a message to an exact address from that list. No extra terminal, special launcher or mailbox registration is needed for this workflow.
 
-**Status: 0.5.0-preview.1 in development.** This is a Windows and Linux preview, licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
+**Status: 0.5.0-preview.1 — Windows and Linux preview.** Licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
 
 ## Delivery
 
@@ -31,7 +31,7 @@ node ./install.cjs
 
 Use `--host codex` or `--host claude` to select one host. The installer uses each host's native plugin commands. It detects conflicting previous installations and does not silently add duplicate plugins. Restart your CLIs after installation or updates.
 
-These commands run from the extracted **release ZIP**, not the source checkout. To build a release from source, see Development below. Python and local Codex development skills are not required to install the release.
+These commands run from the extracted **release archive**, not the source checkout. To build a release from source, see Development below. Python and local Codex development skills are not required to install the release.
 
 ## Use
 

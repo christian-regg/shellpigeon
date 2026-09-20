@@ -1,6 +1,6 @@
 # Linux und Ubuntu unter WSL 2
 
-Stand: 20. September 2026, Entwicklungsversion 0.5.0-preview.1.
+Stand: 20. September 2026, Vorabversion 0.5.0-preview.1.
 
 ## Umfang
 

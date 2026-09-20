@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0-preview.1 — in development
+## 0.5.0-preview.1 — 2026-09-20
 
 - Add Linux process discovery using same-user /proc identities and PID namespaces; verify Claude registry identities and actual owned Unix sockets before delivery.
 - Connect directly to Codex Unix sockets on Linux; retain the stock proxy on Windows and the existing native/queue semantics.
