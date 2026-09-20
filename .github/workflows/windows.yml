@@ -35,6 +35,13 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/shellpigeon-hosts" --ignore-scripts --no-audit --no-fund @openai/codex@0.155.1 @anthropic-ai/claude-code@2.1.278
           node "$RUNNER_TEMP/shellpigeon-hosts/node_modules/@anthropic-ai/claude-code/install.cjs"
           echo "$RUNNER_TEMP/shellpigeon-hosts/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Select Claude's native Windows entry point
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nativeClaude = Join-Path $env:RUNNER_TEMP "shellpigeon-hosts/node_modules/@anthropic-ai/claude-code/bin/claude.exe"
+          if (!(Test-Path -LiteralPath $nativeClaude -PathType Leaf)) { throw "Pinned Claude executable is missing" }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "CLAUDE_BIN=$nativeClaude" -Encoding utf8
       - name: Verify package installation without model calls
         run: npm run package:verify
       - name: Export source archive from this commit
