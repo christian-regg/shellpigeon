@@ -10,4 +10,6 @@ Preserve exact target and return-address binding. Do not convert an uncertain se
 
 Changes to packaging should include a focused check of install/update/uninstall behavior. Documentation and reversible presentation-only edits do not need tests that duplicate their implementation.
 
+Release workflow changes should preserve the read-only PR dry run, exact tag/version/commit binding and the manual publication step. See [release automation](docs/release-automation.de.md) for preparing tags and retrying draft uploads.
+
 Contributions to ShellPigeon are provided under the [MIT License](LICENSE). Preserve applicable copyright notices and the license notices of any third-party code.

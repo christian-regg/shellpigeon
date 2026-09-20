@@ -78,13 +78,15 @@ npm run package:verify
 
 The last command needs both host CLIs but no model calls. It extracts the platform archive into temporary directories, exercises the real installer and cleans up the isolated host profiles. It does not update personal installations. Add `-- --native-roundtrip` only when explicitly choosing live model tests.
 
-- **60 automated tests** cover messaging, identity, queue/native failure handling, storage and installation guards.
+- **69 automated tests** cover messaging, identity, queue/native failure handling, storage and installation guards.
 - Archive installation, repeat install, a synthetic prior-version update, repair and uninstall passed with Codex 0.155.1, Claude Code 2.1.278 and Node 22.16.0 on Windows and Ubuntu/WSL 2.
 - On Windows, `npm run release:upgrade` verifies the real published `0.4.0-preview.7` → `0.5.0-preview.1` update, including host loading before and after the update. [Repeat the check](docs/released-upgrade.de.md).
 - Installed-package live probes on Windows and Linux cover native idle/busy Codex delivery and exact Claude return routing. An ordinary CLI roundtrip using Codex queue and Claude IPC was also confirmed by the user.
 - [Linux scope and verification](docs/linux-support.de.md); [Detailed evidence and limits](docs/native-integration.de.md); [release preparation](docs/release-preparation.de.md).
 
 `npm run publication:audit` checks intended source files and reachable Git history for a limited set of credential patterns. It is not a complete secret audit. [GitHub Actions](https://github.com/christian-regg/shellpigeon/actions/workflows/windows.yml) runs the Windows and Ubuntu test/build checks without signed-in CLIs or model calls.
+
+Version-tag pushes prepare a verified **release draft** after both platform checks pass. Branch, PR and manual runs produce only a CI candidate. Publication remains manual. [Release automation](docs/release-automation.de.md).
 
 Release artifacts include `release.json` file hashes, bundled third-party license texts and an archive SHA-256. Checksums detect corruption and are not publisher signatures. No Node or host CLI binaries are redistributed.
 
