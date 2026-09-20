@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { resolveHostCommand } from '../src/host-command.js';
@@ -83,19 +83,28 @@ test('actual session launcher finds a Windows npm shim and passes MCP configurat
     // Remove the desktop app's PATH additions and inherited overrides.
     const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
       !['PATH', 'CODEX_BIN', 'BRIDGE_DATA_DIR', 'BRIDGE_WORKSPACE'].includes(name.toUpperCase())));
-    Object.assign(env, {PATH: f.npm, BRIDGE_DATA_DIR: f.directory, BRIDGE_WORKSPACE: f.directory});
-    const {stdout} = await execute(process.execPath, [resolve('scripts/launch-session.mjs'), 'codex', '--version'], {
-      env, timeout: 10_000,
-    });
-    const result = JSON.parse(stdout);
-    assert.equal(result.args.length, 3);
-    assert.equal(result.args[0], '-c');
-    assert.match(result.args[1], /^mcp_servers\.session_messaging=\{/);
-    assert.ok(result.args[1].includes('"--provider","codex"'));
-    assert.ok(result.args[1].includes('BRIDGE_WORKSPACE=' + JSON.stringify(f.directory.toLowerCase())));
-    assert.equal(result.args[2], '--version');
-    assert.equal(result.workspace, f.directory.toLowerCase());
-    assert.equal(result.cwd.toLowerCase(), result.workspace);
+    const workspace = join(f.directory, 'workspace');
+    const alias = join(f.directory, 'workspace-alias');
+    await mkdir(workspace);
+    await symlink(workspace, alias, 'junction');
+    // Windows CI can return an 8.3 TEMP path; the launcher resolves real paths.
+    // A junction exercises that distinction even without an abbreviated TEMP.
+    for (const inputWorkspace of [f.directory, alias]) {
+      const expectedWorkspace = (await realpath(inputWorkspace)).toLowerCase();
+      Object.assign(env, {PATH: f.npm, BRIDGE_DATA_DIR: f.directory, BRIDGE_WORKSPACE: inputWorkspace});
+      const {stdout} = await execute(process.execPath, [resolve('scripts/launch-session.mjs'), 'codex', '--version'], {
+        env, timeout: 10_000,
+      });
+      const result = JSON.parse(stdout);
+      assert.equal(result.args.length, 3);
+      assert.equal(result.args[0], '-c');
+      assert.match(result.args[1], /^mcp_servers\.session_messaging=\{/);
+      assert.ok(result.args[1].includes('"--provider","codex"'));
+      assert.ok(result.args[1].includes('BRIDGE_WORKSPACE=' + JSON.stringify(expectedWorkspace)));
+      assert.equal(result.args[2], '--version');
+      assert.equal(result.workspace, expectedWorkspace);
+      assert.equal(result.cwd.toLowerCase(), result.workspace);
+    }
   } finally {
     await broker.close();
     await cleanup(f.directory);
