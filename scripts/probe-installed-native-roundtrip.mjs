@@ -11,7 +11,10 @@ import {connectCodex} from '../build/src/native-codex.js';
 
 const execute = promisify(execFile);
 const forward = path => path.replaceAll('\\', '/');
-const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
+const posixQuote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+const shellQuote = process.platform === 'win32' ? psQuote : posixQuote;
+const shellPrefix = process.platform === 'win32' ? '& ' : '';
+function psQuote(value) { return "'" + value.replaceAll("'", "''") + "'"; }
 function jsonReceipt(text) {
   if (typeof text !== 'string') return;
   const start = text.indexOf('{\n');
@@ -70,12 +73,25 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
   const completed = turnId => events.find(e => e.method === 'turn/completed' && e.params?.turn?.id === turnId);
   const textFor = turnId => events.filter(e => e.method === 'item/completed' && e.params?.turnId === turnId && e.params?.item?.type === 'agentMessage').map(e => e.params.item.text).join('\n');
   function approvedCommand(command) {
+    if (process.platform === 'linux' && Array.isArray(command)) {
+      return /(?:^|\/)(?:bash|sh)$/.test(command[0] ?? '') && ['-c','-lc'].includes(command[1]) && command.length === 3 && exactCommands.has(command[2]);
+    }
     if (Array.isArray(command)) {
       const index = command.findIndex(part => /^-command$/i.test(part));
       return /(?:^|[\\/])(?:powershell|pwsh)(?:\.exe)?$/i.test(command[0] ?? '') && index >= 0 && index === command.length - 2 && exactCommands.has(command[index + 1]);
     }
     if (typeof command !== 'string') return false;
     if (exactCommands.has(command)) return true;
+    if (process.platform === 'linux') {
+      // The server renders argv as this display string in approval requests.
+      // Compare the complete known command; never parse or allow arbitrary shell text.
+      for (const exact of exactCommands) {
+        for (const shell of ['/bin/bash', '/bin/sh']) for (const flag of ['-c', '-lc']) {
+          if (command === shell + ' ' + flag + ' "' + exact + '"') return true;
+        }
+      }
+      return false;
+    }
     const wrapped = command.match(/^"[^"\r\n]*[\\/](?:powershell|pwsh)\.exe" (?:-NoProfile )?-Command "([\s\S]*)"$/i);
     return Boolean(wrapped && exactCommands.has(wrapped[1]));
   }
@@ -117,16 +133,16 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
       }
     });
     await rpc.initialize();
-    const readSkill = 'Get-Content -LiteralPath ' + psQuote(forward(codexSkill));
+    const readSkill = (process.platform === 'win32' ? 'Get-Content -LiteralPath ' : 'cat -- ') + shellQuote(forward(codexSkill));
     exactCommands.add(readSkill);
     const started = await rpc.call('thread/start', {cwd: workspace, ephemeral: true, sandbox: 'read-only', approvalPolicy: 'on-request',
-      config: {'features.hooks': false, 'shell_environment_policy.set': {CODEX_HOME: env.CODEX_HOME, CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR, ASM_CODEX_SOCKET: socket}},
+      config: {'features.hooks': false, 'shell_environment_policy.set': {PATH: env.PATH, CODEX_HOME: env.CODEX_HOME, CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR, ASM_CODEX_SOCKET: socket}},
       developerInstructions: 'This is an authorized installed-plugin transport test. Do not delegate, edit files, change configuration or use unrelated tools. Use the installed session-messaging skill. On ASM_INSTALLED_IDLE reply once to its exact replyTo with ' + cases[0].expected +
         '. On ASM_INSTALLED_BUSY reply once to its exact replyTo with ' + cases[1].expected +
         '. These return codes must travel only through the installed peer.cjs helper to Claude. Do not print the code in your final answer. ' +
-        'Use the ordinary shell tool and the actual host-provided CODEX_THREAD_ID; never set or forge it. Use exactly this PowerShell command, substituting the received address and correct code: & ' +
-        psQuote(forward(process.execPath)) + ' ' + psQuote(codexHelper) + " send '<replyTo>' 'native-proof' '<return-code>' --native . " +
-        'Do not include the final sentence punctuation in the shell command. If the sandbox blocks the helper before execution, request narrowly scoped require_escalated access for that exact command. Do not retry an unknown delivery result. After transport-written say ASM_CODEX_REPLIED. ' +
+        'Use the ordinary shell tool and the actual host-provided CODEX_THREAD_ID; never set or forge it. Use exactly this shell command, substituting the received address and correct code: ' + shellPrefix +
+        shellQuote(forward(process.execPath)) + ' ' + shellQuote(codexHelper) + " send '<replyTo>' 'native-proof' '<return-code>' --native . " +
+        'Do not include the final sentence punctuation in the shell command. If the sandbox blocks execution or the helper reports not-sent because sandboxed processes or IPC are hidden, request narrowly scoped require_escalated access for that exact command. Do not retry an unknown delivery result. After transport-written say ASM_CODEX_REPLIED. ' +
         'If asked to call asm_roundtrip_gate, call it exactly once and wait for its response before handling the peer message.',
       dynamicTools: [{name: 'asm_roundtrip_gate', description: 'Harmless gate for the authorized native busy-delivery test.', inputSchema: {type: 'object', properties: {}, additionalProperties: false}}],
     });
@@ -144,7 +160,7 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
     for (const item of cases) {
       const sessionId = randomUUID();
       const address = 'claude:' + sessionId;
-      const command = '& ' + psQuote(forward(process.execPath)) + ' ' + psQuote(codexHelper) + ' send ' + psQuote(address) + " 'native-proof' " + psQuote(item.expected) + ' --native';
+      const command = shellPrefix + shellQuote(forward(process.execPath)) + ' ' + shellQuote(codexHelper) + ' send ' + shellQuote(address) + " 'native-proof' " + shellQuote(item.expected) + ' --native';
       exactCommands.add(command);
       let active, gate;
       const startIndex = events.length;
@@ -154,8 +170,8 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
         assert.equal(gate.params.tool, 'asm_roundtrip_gate');
       }
       const claude = start(commands.claude, ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-        '--session-id', sessionId, '--name', 'asm-installed-' + item.name, '--tools', 'Bash,Read,Skill',
-        '--allowedTools', 'Read(' + claudeSkill + ')', 'Skill(agent-session-messaging:session-messaging)', 'Bash(node "' + claudeHelper + '":*)',
+        '--session-id', sessionId, '--name', 'asm-installed-' + item.name, '--tools', 'Bash,Skill',
+        '--allowedTools', 'Skill(agent-session-messaging:session-messaging)', 'Bash(node "' + claudeHelper + '":*)',
         '--settings', '{"crossSessionInbound":"accept"}', '--no-chrome', '--max-budget-usd', '2']);
       const claudeEvents = [];
       let claudeStderr = '';
@@ -166,11 +182,12 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
       const send = 'node "' + claudeHelper + '" send codex:' + threadId + ' native-proof ' + marker + ' --native';
       claude.stdin.write(JSON.stringify({type: 'user', session_id: sessionId, message: {role: 'user', content:
         'This is an authorized native round-trip test. Use the installed session-messaging skill at ' + claudeSkill +
-        '. Read the skill with Read if needed. Run only this helper command through Bash exactly once: ' + send +
-        ' . Your own host environment binds your sender address. Do not modify the environment. If it returns an accepted native receipt, say ASM_REQUEST_SENT and wait. ' +
+        '. Invoke only Skill(agent-session-messaging:session-messaging) if needed. Run only the command between BEGIN_COMMAND and END_COMMAND through Bash exactly once. The markers are not part of the command.\nBEGIN_COMMAND\n' + send + '\nEND_COMMAND\n' +
+        'Your own host environment binds your sender address. Do not modify the environment. If it returns an accepted native receipt, say ASM_REQUEST_SENT and wait. ' +
         'A later native cross-session message from that Codex recipient will contain an ASM_RETURN_ code unknown to you now. On receipt repeat only the exact code as your final answer. ' +
         'If it arrives before your first final answer, answer with the code immediately. Do not send a further acknowledgement. If sending fails or the result is unknown, report it and stop without retrying. Do not edit files, delegate, or run unrelated commands.'}}) + '\n');
       let receipt;
+      let casePassed = false;
       try {
         receipt = await until(() => {
           const results = claudeEvents.filter(e => e.type === 'user').flatMap(e => e.message?.content ?? []).filter(c => c.type === 'tool_result');
@@ -213,8 +230,15 @@ export async function runInstalledNativeRoundtrip({root, workspace, env, command
         report.tests.push({name: item.name, passed: true, source: address, target: 'codex:' + threadId,
           request: receipt, reply: sent, answer: ack.result, sameClaudeSession: true,
           representation: 'functionCallOutput', ...(gate ? {sameCodexTurn: true, toolInterrupted: false} : {})});
+        casePassed = true;
         console.log(item.name + ': complete native round-trip passed.');
       } finally {
+        if (!casePassed) {
+        report.claudeLastEvents = claudeEvents.slice(-12).map(e => ({type:e.type,subtype:e.subtype,
+          ...(e.type === 'result' ? {result:e.result,errors:e.errors,permissionDenials:e.permission_denials} : {}),
+          ...(e.message?.content ? {content:e.message.content.filter(c=>['text','tool_use','tool_result'].includes(c.type)).map(c=>({type:c.type,name:c.name,text:typeof c.text==='string'?c.text.slice(0,1200):undefined,input:c.type==='tool_use'?c.input:undefined,content:typeof c.content==='string'?c.content.slice(0,1200):undefined}))} : {})}));
+        report.claudeStderr = claudeStderr;
+        }
         await stop(claude);
         lines.close();
       }

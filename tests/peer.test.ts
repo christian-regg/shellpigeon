@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
@@ -28,11 +30,11 @@ test('Claude metadata cannot redirect delivery to a reused PID, foreign process 
   const record = {pid: 123, sessionId: other, cwd: process.cwd(), procStart: '987654321', peerProtocol: 1,
     messagingSocketPath: '\\\\.\\pipe\\LOCAL\\cc-msg-' + 'a'.repeat(32)};
   const processes = [{pid: 123, ppid: 1, name: 'claude.exe', command: '', started: record.procStart}];
-  assert.ok(claudeRecord(record, processes, '123.json'));
-  assert.equal(claudeRecord({...record, procStart: 'old'}, processes, '123.json'), null);
-  assert.equal(claudeRecord(record, [{...processes[0]!, name: 'unrelated.exe'}], '123.json'), null);
-  assert.equal(claudeRecord({...record, messagingSocketPath: '\\\\server\\pipe\\cc-msg-' + 'a'.repeat(32)}, processes, '123.json'), null);
-  assert.equal(claudeRecord({...record, peerProtocol: 99}, processes, '123.json'), null);
+  assert.ok(claudeRecord(record, processes, '123.json', 'win32'));
+  assert.equal(claudeRecord({...record, procStart: 'old'}, processes, '123.json', 'win32'), null);
+  assert.equal(claudeRecord(record, [{...processes[0]!, name: 'unrelated.exe'}], '123.json', 'win32'), null);
+  assert.equal(claudeRecord({...record, messagingSocketPath: '\\\\server\\pipe\\cc-msg-' + 'a'.repeat(32)}, processes, '123.json', 'win32'), null);
+  assert.equal(claudeRecord({...record, peerProtocol: 99}, processes, '123.json', 'win32'), null);
 });
 
 async function fixture() {
@@ -47,7 +49,16 @@ async function fixture() {
   await writeFile(join(root, 'thread-writer-locks', other + '.lock'), '');
   return root;
 }
+const hosts = new Map<string, ChildProcess>();
+async function stopHost(root: string) {
+  const child = hosts.get(root);
+  if (!child) return;
+  hosts.delete(root);
+  if (child.exitCode === null) { const closed = once(child, 'close'); child.kill(); await closed; }
+  await rm(join(root, 'control.sock'), {force: true});
+}
 async function cleanup(root: string) {
+  await stopHost(root);
   assert.ok(resolve(root).startsWith(resolve(tmpdir()) + sep + 'asm-peer-test-'));
   await rm(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 100});
 }
@@ -73,6 +84,7 @@ test('control socket discovery uses only explicit Codex Unix endpoints', () => {
 
 // A real WebSocket handshake over the same stdio tunnel as the stock proxy.
 async function fakeHost(root: string, behavior: 'unreachable' | 'accept' | 'drop', threadSource = 'user') {
+  await stopHost(root);
   const file = join(root, 'codex.mjs');
   // Compiled tests live under build/tests: resolve the installed module from the repository.
   const moduleUrl = pathToFileURL(resolve('node_modules/ws/wrapper.mjs')).href;
@@ -96,9 +108,21 @@ wss.on('connection', ws=>ws.on('message', data=>{
  }
  ws.send(JSON.stringify({id:m.id,result}));
 }));
-server.emit('connection',stream); process.stdin.on('end',()=>process.exit(0));
+if (process.env.TEST_UNIX_SOCKET) server.listen(process.env.TEST_UNIX_SOCKET,()=>process.stdout.write('READY\\n'));
+else server.emit('connection',stream); process.stdin.on('end',()=>process.exit(0));
 `);
-  return {CODEX_HOME: root, CODEX_BIN: file, CAPTURE: join(root, 'queue.json'), NATIVE_CAPTURE: join(root, 'native.json'), RPC_TRACE: join(root, 'rpc.jsonl')};
+  const env = {CODEX_HOME: root, CODEX_BIN: file, CAPTURE: join(root, 'queue.json'), NATIVE_CAPTURE: join(root, 'native.json'), RPC_TRACE: join(root, 'rpc.jsonl')};
+  if (process.platform === 'linux' && behavior !== 'unreachable') {
+    const child = spawn(process.execPath, [file], {env: {...env, TEST_UNIX_SOCKET: join(root, 'control.sock')}, stdio: ['pipe','pipe','pipe']});
+    hosts.set(root, child);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Unix fixture did not listen')), 5000);
+      child.once('error', reject);
+      child.stdout.once('data', () => {clearTimeout(timer); resolve();});
+      child.once('exit', code => {clearTimeout(timer); reject(new Error('Unix fixture exited: '+code));});
+    });
+  }
+  return env;
 }
 
 test('native-only never queues; auto falls back before sending and preserves literal message arguments', async () => {

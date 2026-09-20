@@ -43,7 +43,10 @@ export function selectHosts(host: string): Host[] {
   if (!['both','claude','codex'].includes(host)) throw new Error('Use --host both, claude or codex.');
   return host === 'both' ? ['codex','claude'] : [host as Host];
 }
-function samePath(a: string, b: string) {return resolve(a).replace(/^\\\\\?\\/, '').toLowerCase() === resolve(b).replace(/^\\\\\?\\/, '').toLowerCase();}
+function samePath(a: string, b: string) {
+  const normalize = (value: string) => process.platform === 'win32' ? resolve(value).replace(/^\\\\\?\\/, '').toLowerCase() : resolve(value);
+  return normalize(a) === normalize(b);
+}
 export function checkInventory(host: Host, root: string, marketplaces: any[], installed: any[]) {
   const id = plugin + '@' + distributionMarketplace;
   const market = marketplaces.find(p => p.name === distributionMarketplace);
@@ -54,7 +57,7 @@ export function checkInventory(host: Host, root: string, marketplaces: any[], in
   return {market, current};
 }
 export async function installRelease(root: string, options: {host: string; check?: boolean; uninstall?: boolean}) {
-  if (process.platform !== 'win32') throw new Error('This preview supports native Windows only.');
+  if (!['win32', 'linux'].includes(process.platform)) throw new Error('This preview supports Windows and Linux only.');
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major! < 22 || (major === 22 && minor! < 16)) throw new Error('Node.js 22.16 or newer is required.');
   if (options.check && options.uninstall) throw new Error('Choose --check or --uninstall.');

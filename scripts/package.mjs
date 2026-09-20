@@ -52,5 +52,10 @@ if(process.platform==='win32'){
  const archive=join(releases,metadata.artifactName+'-'+metadata.version+'-windows.zip');
  await execute('tar.exe',['-a','-c','-f',archive,'-C',destination,'.'],{windowsHide:true});
  await writeFile(archive+'.sha256',createHash('sha256').update(await readFile(archive)).digest('hex')+'  '+metadata.artifactName+'-'+metadata.version+'-windows.zip\n');
+} else if(process.platform==='linux'){
+ const name=metadata.artifactName+'-'+metadata.version+'-linux.tar.gz';
+ const archive=join(releases,name);
+ await execute('tar',['-czf',archive,'-C',destination,'.']);
+ await writeFile(archive+'.sha256',createHash('sha256').update(await readFile(archive)).digest('hex')+'  '+name+'\n');
 }
 console.log('Built release: '+destination+' ('+Object.keys(manifest.files).length+' files; license '+(manifest.license??'pending')+').');

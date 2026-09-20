@@ -41,9 +41,10 @@ async function main() {
         'CLI -c/--config, profile and certain other launch overrides select an embedded server instead.',
         'A later listener does not adopt open embedded sessions or the Desktop stdio server.',
         'A CLI can attach on a new start or resume after its previous owner exits. Never force a locked thread.',
-        'Only the optional managed daemon start workflow requires a standalone install; the existing npm CLI supports queue delivery.',
+        ...(process.platform === 'win32' ? ['Only the optional managed daemon start workflow requires a standalone install; the existing npm CLI supports queue delivery.',
         'Windows daemon start requires a non-administrator terminal whose host allows detached processes.',
-        'Optional setup-listener.ps1 previews changes by default; it is not a prerequisite for listing or default delivery.',
+        'Optional setup-listener.ps1 previews changes by default; it is not a prerequisite for listing or default delivery.'] :
+        ['Linux peers must share the same OS user and PID namespace; Windows-to-WSL and cross-distribution messaging are not supported.']),
         'No daemon, model turn or persistent configuration was started or changed by this diagnosis.',
       ]}, null, 2));
   } else if (verb === 'self') {

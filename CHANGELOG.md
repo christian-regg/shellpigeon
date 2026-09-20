@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0-preview.1 — in development
+
+- Add Linux process discovery using same-user /proc identities and PID namespaces; verify Claude registry identities and actual owned Unix sockets before delivery.
+- Connect directly to Codex Unix sockets on Linux; retain the stock proxy on Windows and the existing native/queue semantics.
+- Add Linux tar.gz distributions, case-sensitive installation conflict checks and XDG data paths.
+- Extend installed-package checks and the bounded live roundtrip harness to Linux; add Ubuntu CI alongside Windows.
+- Scope WSL 2 support to sessions inside the same Linux distribution. Windows-to-WSL, macOS and OpenCode remain outside this milestone.
+
+
 ## 0.4.0-preview.7 — 2026-09-20
 
 - Fix intermittent Windows mailbox-broker startup failures when a discovery reader briefly holds `broker.json` open during atomic replacement.

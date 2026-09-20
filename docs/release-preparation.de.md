@@ -1,5 +1,7 @@
 # Release-Vorbereitung: ShellPigeon 0.4.0-preview.7
 
+Aktueller Ausbau: **0.5.0-preview.1 ergänzt Linux/Ubuntu unter WSL 2**. Umfang und neue Nachweise stehen in [Linux-Unterstützung](linux-support.de.md). Die folgenden Windows-Ergebnisse bleiben historische Nachweise.
+
 Stand: 20. September 2026. Ziel ist eine öffentliche Windows-Preview für gewöhnliche Claude-Code- und Codex-CLI-Sessions.
 
 ## Fehlerkorrektur in Preview.7

@@ -14,6 +14,8 @@ const runFile = promisify(execFile);
 const {values} = parseArgs({options: {python: {type: 'string'}, 'plugin-creator': {type: 'string'}, 'native-roundtrip': {type: 'boolean'}}});
 const metadata = JSON.parse(await readFile('package.json', 'utf8'));
 const release = resolve('artifacts/release', metadata.version);
+const archive = resolve('artifacts/release', metadata.artifactName+'-'+metadata.version+(process.platform==='win32' ? '-windows.zip' : '-linux.tar.gz'));
+const tar = process.platform === 'win32' ? 'tar.exe' : 'tar';
 for (const path of ['codex-marketplace/plugins/agent-session-messaging/dist/peer.cjs', 'claude-marketplace/plugins/agent-session-messaging/dist/peer.cjs']) await stat(join(release, path));
 const commands = {codex: await resolveHostCommand('codex'), claude: await resolveHostCommand('claude')};
 const root = await mkdtemp(join(tmpdir(), 'asm-package-ü spaced-'));
@@ -53,7 +55,7 @@ async function bundleCheck(host, installed) {
   const helper = resolve(skillDir, '../../dist/peer.cjs');
   assert.match(await readFile(join(skillDir, 'SKILL.md'), 'utf8'), /\.\.\/\.\.\/dist\/peer\.cjs/);
   assert.match(await run(process.execPath, [helper, '--help']), /peer\.cjs doctor/);
-  if (host === 'codex') {
+  if (host === 'codex' && process.platform === 'win32') {
     assert.equal(digest(await readFile(join(installed, 'setup-listener.ps1'))), digest(await readFile(join(source, 'setup-listener.ps1'))));
     const setup = JSON.parse(await run('powershell.exe', ['-NoProfile', '-File', join(installed, 'setup-listener.ps1')]));
     assert.equal(setup.mode, 'preview');
@@ -73,7 +75,7 @@ try {
   report.hosts = {codex: await cli('codex', ['--version']), claude: await cli('claude', ['--version']), node: process.version};
   console.log('Extracting release archive and installing into isolated profiles.');
   await mkdir(distribution);
-  await run('tar.exe', ['-x','-f',resolve('artifacts/release',metadata.artifactName+'-'+metadata.version+'-windows.zip'),'-C',distribution]);
+  await run(tar, ['-x','-f',archive,'-C',distribution]);
   // Synthetic older release version exercises host update caches without a model turn.
   const prior=JSON.parse(await readFile(join(distribution,'release.json'),'utf8'));
   prior.version='0.4.0-preview.0';
@@ -90,7 +92,7 @@ try {
   assert.deepEqual(first.completed,['codex','claude']);
   const repeated=JSON.parse(await run(process.execPath,[installer]));
   assert.deepEqual(repeated.completed,['codex','claude']);
-  await run('tar.exe', ['-x','-f',resolve('artifacts/release',metadata.artifactName+'-'+metadata.version+'-windows.zip'),'-C',distribution]);
+  await run(tar, ['-x','-f',archive,'-C',distribution]);
   const updated=JSON.parse(await run(process.execPath,[installer]));
   assert.equal(updated.version,metadata.version);
   report.checks.installer={archiveExtracted:true,preflight:true,firstInstall:true,repeatedInstall:true,upgradeFromSyntheticPriorVersion:true};

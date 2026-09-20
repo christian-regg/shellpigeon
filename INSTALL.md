@@ -1,4 +1,4 @@
-# Install ShellPigeon (Windows preview)
+# Install ShellPigeon (Windows and Linux preview)
 
 This release connects ordinary local Claude Code and Codex CLI conversations. Keep using your existing CLIs. The installer configures their native plugin systems; it does not install a model runtime, listener, daemon, autostart entry or another Codex copy.
 
@@ -6,12 +6,12 @@ The public product name is **ShellPigeon**. The plugin/marketplace ID remains `a
 
 ## Requirements
 
-- Native Windows, one operating-system user.
+- Native Windows or Linux, one operating-system user. Ubuntu under WSL 2 is supported when both CLIs run within the same distribution.
 - Node.js 22.16 or newer, available as `node`.
 - Codex CLI 0.154.0 or newer and/or Claude Code 2.1.278 or newer, already installed and signed in.
 - Tested with Node 22.16.0, Codex 0.154.0 / 0.155.1 and Claude Code 2.1.278. Later versions may change the local protocols.
 
-## Install
+## Install on Windows
 
 1. Download `shellpigeon-<version>-windows.zip` from [GitHub Releases](https://github.com/christian-regg/shellpigeon/releases). Its adjacent `.sha256` file gives the archive checksum (`Get-FileHash -Algorithm SHA256 <zip>`). Checksums detect corruption; they are not a publisher signature.
 2. Extract it to a **permanent directory**, for example `$env:LOCALAPPDATA\ShellPigeon\distribution`. Keep hidden `.agents`, `.claude-plugin` and `.codex-plugin` directories when extracting or copying.
@@ -22,6 +22,25 @@ node .\install.cjs --check
 node .\install.cjs
 ```
 
+## Install on Linux / WSL 2
+
+Install Linux versions of Node, Claude Code and Codex inside the distribution. Use its Linux filesystem, for example a directory below your home, for the release, projects and CLI profiles. Windows CLI installations and Windows profiles do not provide Linux session support.
+
+Download the matching `shellpigeon-<version>-linux.tar.gz` and `.sha256` from [GitHub Releases](https://github.com/christian-regg/shellpigeon/releases). Verify and extract the archive to a permanent directory, preserving hidden files:
+
+```sh
+sha256sum --check shellpigeon-<version>-linux.tar.gz.sha256
+mkdir -p ~/.local/share/shellpigeon/distribution
+tar -xzf shellpigeon-<version>-linux.tar.gz -C ~/.local/share/shellpigeon/distribution
+cd ~/.local/share/shellpigeon/distribution
+node ./install.cjs --check
+node ./install.cjs
+```
+
+Use the actual version in place of `<version>`. Do not run the installer with sudo. The two hosts should run under the same Linux user and PID namespace. Cross-distribution and Windows-to-WSL messaging are separate, unsupported workflows.
+
+## Host selection and first use
+
 Use `--host claude` or `--host codex` on both commands to install only one host. The default is both. `--check` verifies the release and reads installed host versions and plugin inventories. Installation adds the dedicated `agent-session-messaging` marketplace and enables the plugin for your user through each host's CLI. Codex's bundled `setup.cjs` records the permanent Node and MCP paths inside this package.
 
 Restart the selected CLIs and start new conversations to load the skill. Ask “List the other Claude and Codex sessions”, or “List all sessions across projects”. In a brand-new empty Codex conversation, first send an ordinary message such as “Reply only with OK”; queue discovery needs its saved thread metadata.
@@ -30,7 +49,7 @@ Then ask to send a message to an exact address from the list. Claude replies are
 
 ## Update and repair
 
-Keep the same permanent directory. Back up its program files, close affected CLI sessions, and extract the complete new ZIP over it. Run `node .\install.cjs --check`, then `node .\install.cjs`. Restart the CLIs. The installer verifies the exact packaged version, invokes the host update/install commands and regenerates Codex's local paths. Rerunning after an interrupted install is supported; the installer reports which hosts completed. It does not roll back a successful first host if the second fails.
+Keep the same permanent directory. Back up its program files, close affected CLI sessions, and extract the complete new archive over it. Run `node ./install.cjs --check`, then `node ./install.cjs`. Restart the CLIs. The installer verifies the exact packaged version, invokes the host update/install commands and regenerates Codex's local paths. Rerunning after an interrupted install is supported; the installer reports which hosts completed. It does not roll back a successful first host if the second fails.
 
 A checksum mismatch means re-extract the complete release before retrying. If Node moved, rerun with the new `node`. If the permanent directory moved, explicitly remove the old plugin and marketplace registrations using the commands below, then install from the new location. Do not remove private mailbox data to repair installation.
 
@@ -41,7 +60,7 @@ An existing installation of the same plugin from `personal`, `agent-session-mess
 From the permanent release directory:
 
 ```powershell
-node .\install.cjs --uninstall
+node ./install.cjs --uninstall
 ```
 
 Use `--host codex` or `--host claude` to choose one host. Private mailbox data and release files are retained. To also remove this release's dedicated marketplace registrations:
@@ -58,11 +77,11 @@ codex plugin remove agent-session-messaging@agent-session-messaging
 claude plugin uninstall agent-session-messaging@agent-session-messaging --scope user --keep-data
 ```
 
-Only after uninstalling both hosts, remove the extracted release directory if desired. Private data under `%LOCALAPPDATA%\AgentSessionMessaging` (or `BRIDGE_DATA_DIR`) is separate; do not delete the parent directory as part of removing program files.
+Only after uninstalling both hosts, remove the extracted release directory if desired. Private data under `%LOCALAPPDATA%\AgentSessionMessaging` on Windows or `${XDG_DATA_HOME:-~/.local/share}/AgentSessionMessaging` on Linux (or `BRIDGE_DATA_DIR`) is separate; do not delete the parent directory as part of removing program files.
 
 ## Scope and limits
 
-Windows CLI support is the preview scope. A writer lock is only a candidate, not proof that a recipient is open. Native Codex delivery needs an endpoint that already owns the thread. Desktop/editor queue processing, macOS/Linux/WSL integration and managed listener installation are not release guarantees. No manual inbox polling is needed for normal Claude IPC replies. The legacy durable mailbox tools are a separate optional workflow.
+Windows and Linux CLI support is the preview scope. A writer lock is only a candidate, not proof that a recipient is open. Native Codex delivery needs an endpoint that already owns the thread. Desktop/editor queue processing, macOS, Windows-to-WSL or cross-distribution integration and managed listener installation are not release guarantees. No manual inbox polling is needed for normal Claude IPC replies. The legacy durable mailbox tools are a separate optional workflow.
 
 The helper requests normal host access when shell sandboxing prevents local IPC or metadata access. It does not change your CLI approval policies. More details: [CLI operation](docs/codex-cli-operation.de.md), [test evidence](docs/native-integration.de.md), [optional mailboxes](docs/installed-plugin.de.md).
 

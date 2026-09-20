@@ -2,6 +2,9 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface, type Interface } from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { Duplex } from 'node:stream';
+import { connect } from 'node:net';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import WebSocket from 'ws';
 import { resolveHostCommand } from './host-command.js';
 
@@ -14,15 +17,19 @@ export class CodexRpc extends EventEmitter {
   private lines?: Interface;
   private socket?: WebSocket;
   private ready: Promise<void>;
-  constructor(private child: ChildProcessWithoutNullStreams, private timeout = 15_000, framing: 'jsonl' | 'websocket' = 'jsonl') {
+  private child?: ChildProcessWithoutNullStreams;
+  constructor(transport: ChildProcessWithoutNullStreams | {socketPath: string}, private timeout = 15_000, framing: 'jsonl' | 'websocket' = 'jsonl') {
     super();
-    child.stderr.on('data', data => { this.stderr = (this.stderr + data).slice(-2000); });
-    child.on('error', error => this.abort(error));
-    child.on('exit', code => this.abort(new Error('Codex transport exited (' + code + '): ' + this.stderr)));
-    child.stdin.on('error', error => this.abort(error));
-    if (framing === 'websocket') {
+    const child = 'socketPath' in transport ? undefined : transport;
+    this.child = child;
+    child?.stderr.on('data', data => { this.stderr = (this.stderr + data).slice(-2000); });
+    child?.on('error', error => this.abort(error));
+    child?.on('exit', code => this.abort(new Error('Codex transport exited (' + code + '): ' + this.stderr)));
+    child?.stdin.on('error', error => this.abort(error));
+    if ('socketPath' in transport || framing === 'websocket') {
       // The stock proxy tunnels raw bytes. The control socket expects a WebSocket handshake.
-      const stream = Duplex.from({readable: child.stdout, writable: child.stdin});
+      const stream = 'socketPath' in transport ? connect({path: transport.socketPath})
+        : Duplex.from({readable: child!.stdout, writable: child!.stdin});
       stream.on('error', error => this.abort(error));
       this.socket = new WebSocket('ws://localhost/', {
         createConnection: () => stream, handshakeTimeout: timeout, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024,
@@ -37,7 +44,7 @@ export class CodexRpc extends EventEmitter {
       this.socket.on('close', () => this.abort(new Error('Codex WebSocket closed.')));
     } else {
       this.ready = Promise.resolve();
-      this.lines = createInterface({input: child.stdout});
+      this.lines = createInterface({input: child!.stdout});
       this.lines.on('line', line => this.receive(line));
     }
   }
@@ -58,7 +65,7 @@ export class CodexRpc extends EventEmitter {
   private write(message: unknown) {
     const data = JSON.stringify(message);
     if (this.socket) this.socket.send(data);
-    else this.child.stdin.write(data + '\n');
+    else this.child!.stdin.write(data + '\n');
   }
   private abort(error: Error) {
     this.closed = true;
@@ -67,7 +74,7 @@ export class CodexRpc extends EventEmitter {
   }
   async initialize() {
     const result = await this.call('initialize', {
-      clientInfo: {name: 'agent-session-messaging', version: '0.4.0-preview.7'}, capabilities: {experimentalApi: true},
+      clientInfo: {name: 'agent-session-messaging', version: '0.5.0-preview.1'}, capabilities: {experimentalApi: true},
     });
     this.write({method: 'initialized'});
     return result;
@@ -96,18 +103,25 @@ export class CodexRpc extends EventEmitter {
     this.abort(new Error('Codex transport closed.'));
     this.lines?.close();
     if (this.socket) this.socket.terminate();
+    if (!this.child) return;
     this.child.stdin.end();
     if (this.child.exitCode !== null) return;
     await new Promise<void>(resolve => {
-      const timer = setTimeout(() => { this.child.kill(); resolve(); }, 1000);
-      this.child.once('exit', () => { clearTimeout(timer); resolve(); });
+      const timer = setTimeout(() => { this.child!.kill(); resolve(); }, 1000);
+      this.child!.once('exit', () => { clearTimeout(timer); resolve(); });
     });
   }
 }
 
 export async function connectCodex(options: {args?: string[]; env?: NodeJS.ProcessEnv; timeout?: number} = {}) {
-  const command = await resolveHostCommand('codex', {env: options.env});
   const args = options.args ?? ['app-server', 'proxy'];
+  if (process.platform === 'linux' && args[0] === 'app-server' && args[1] === 'proxy') {
+    const index = args.indexOf('--sock');
+    const path = index >= 0 ? args[index + 1] : join(options.env?.CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'app-server-control', 'app-server-control.sock');
+    if (!path?.startsWith('/') || path.includes('\0')) throw new Error('Codex requires an absolute local Unix socket path.');
+    return new CodexRpc({socketPath: path}, options.timeout);
+  }
+  const command = await resolveHostCommand('codex', {env: options.env});
   return new CodexRpc(spawn(command.file, [...command.args, ...args], {
     cwd: process.cwd(), env: options.env ?? process.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
   }), options.timeout, args.includes('proxy') ? 'websocket' : 'jsonl');

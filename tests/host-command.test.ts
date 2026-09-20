@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, mkdir, writeFile, rm, realpath, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath, symlink, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { resolveHostCommand } from '../src/host-command.js';
@@ -109,4 +109,22 @@ test('actual session launcher finds a Windows npm shim and passes MCP configurat
     await broker.close();
     await cleanup(f.directory);
   }
+});
+
+
+test('Linux executable lookup skips non-executable PATH entries and preserves literal arguments', {skip:process.platform!=='linux'}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'asm-launch-test-linux-'));
+  try {
+    const shadow=join(root,'shadow');const bin=join(root,'ü spaced');
+    await mkdir(shadow);await mkdir(bin);
+    await writeFile(join(shadow,'codex'),'not executable');
+    await chmod(join(shadow,'codex'),0o600);
+    await symlink(process.execPath,join(bin,'codex'));
+    const command=await resolveHostCommand('codex',{env:{PATH:shadow+':'+bin}});
+    assert.equal(command.file,join(bin,'codex'));
+    const args=['ü & space','$(literal)','single\'quote'];
+    const result=await execute(command.file,['-e','console.log(JSON.stringify(process.argv.slice(1)))','--',...args]);
+    assert.deepEqual(JSON.parse(result.stdout),args);
+    await assert.rejects(resolveHostCommand('codex',{env:{PATH:shadow}}),/Could not find/);
+  } finally {await cleanup(root);}
 });
