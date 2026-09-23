@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { claudeRecord, exactPeer, sourcePeer, discoverCodexLocks, controlSockets, sameDirectory, isCodexUserThread, discoverCodexSocket, type Peer } from '../src/peer-discovery.js';
+import { claudeRecord, claudeRegistrationGap, exactPeer, sourcePeer, discoverCodexLocks, controlSockets, sameDirectory, isCodexUserThread, discoverCodexSocket, type Peer } from '../src/peer-discovery.js';
 import { sendPeer, DeliveryUnknown, peerMessage } from '../src/peer-transport.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -24,6 +24,22 @@ test('exact routing rejects duplicate names and duplicate native owners; return 
   assert.throws(() => sourcePeer([peer], {CLAUDE_CODE_MESSAGING_SOCKET: 'unknown', CODEX_THREAD_ID: id}), /Cannot bind/);
   assert.throws(() => sourcePeer([peer], {}), /No native sender/);
   if (process.platform === 'win32') assert.ok(sameDirectory('\\\\?\\F:\\project', 'f:\\project'));
+});
+
+test('a Claude session without its own registry record gets an actionable binding error', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'asm-claude-home-'));
+  try {
+    const env = {CLAUDE_CONFIG_DIR: home, CLAUDE_PID: '4242', CLAUDE_CODE_MESSAGING_SOCKET: 'pipe-unregistered'};
+    const gap = await claudeRegistrationGap(env);
+    assert.match(gap ?? '', /sessions[\\/]4242\.json.*CLAUDE_CODE_CHILD_SESSION/);
+    assert.throws(() => sourcePeer([peer, source], env, gap), /Cannot bind.*CLAUDE_CODE_CHILD_SESSION/);
+    assert.throws(() => sourcePeer([source, {...source, id, address: 'claude:' + id}], {CLAUDE_CODE_MESSAGING_SOCKET: source.socket}, gap),
+      /Cannot bind.*several live Claude records/);
+    assert.equal(await claudeRegistrationGap({CLAUDE_CONFIG_DIR: home, CLAUDE_CODE_MESSAGING_SOCKET: 'pipe-unregistered'}), null);
+    await mkdir(join(home, 'sessions'));
+    await writeFile(join(home, 'sessions', '4242.json'), '{}');
+    assert.equal(await claudeRegistrationGap(env), null);
+  } finally { await rm(home, {recursive: true, force: true}); }
 });
 
 test('Claude metadata cannot redirect delivery to a reused PID, foreign process or arbitrary pipe', () => {

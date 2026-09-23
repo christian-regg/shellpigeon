@@ -59,6 +59,7 @@ Only exact addresses, exact IDs or unique exact names are accepted. Peer message
 - A Codex writer lock identifies a queue candidate; it may belong to a closed session. Resume a closed or interrupted CLI before expecting queued work to run.
 - A saved `vscode` source can mean Desktop/editor or a CLI attached to an app-server; it does not prove the current UI. Desktop queue dispatch is unverified.
 - Native Codex delivery requires an existing endpoint that owns the thread. The helper does not start a daemon or adopt an already running embedded CLI.
+- Claude Code does not register an interactive session started from another Claude Code session's tool, because the new session inherits `CLAUDE_CODE_CHILD_SESSION`. Such a session can neither send nor receive peer messages. Start it from an ordinary terminal, or clear that variable in its launcher (`set "CLAUDE_CODE_CHILD_SESSION="` in a batch file).
 - The optional managed listener script is an advanced experimental path, not an installation prerequisite. Its full Windows lifecycle has not passed on this development host.
 - Existing host approval and inbound-message policies apply.
 

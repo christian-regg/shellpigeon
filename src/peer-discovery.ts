@@ -199,11 +199,25 @@ export function exactPeer(peers: Peer[], target: string): Peer {
   if (matches.length !== 1) throw new Error(matches.length ? 'Ambiguous target; use an exact unique address.' : 'No discovered peer matches the exact target.');
   return matches[0]!;
 }
-export function sourcePeer(peers: Peer[], env = process.env): Peer {
+/** Claude Code omits sessions/<pid>.json for an interactive session that inherited CLAUDE_CODE_CHILD_SESSION. */
+export async function claudeRegistrationGap(env = process.env): Promise<string | null> {
+  const pid = Number(env.CLAUDE_PID);
+  if (!env.CLAUDE_CODE_MESSAGING_SOCKET || !Number.isSafeInteger(pid) || pid < 1) return null;
+  const registry = join(claudeHome(env), 'sessions', pid + '.json');
+  try { await lstat(registry); return null; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+    return 'Claude Code has not registered this session (no ' + registry + '). An interactive session started from a tool of ' +
+      'another Claude Code session inherits CLAUDE_CODE_CHILD_SESSION and stays unregistered; start it from an ordinary terminal ' +
+      'or clear that variable in its launcher, then restart it.';
+  }
+}
+export function sourcePeer(peers: Peer[], env = process.env, registrationGap?: string | null): Peer {
   if (env.CLAUDE_CODE_MESSAGING_SOCKET) {
     const socket = env.CLAUDE_CODE_MESSAGING_SOCKET.replace(/^uds:/, '');
     const matches = peers.filter(p => p.provider === 'claude' && p.socket === socket);
-    if (matches.length !== 1) throw new Error('Cannot bind this Claude process to one live return address.');
+    if (matches.length > 1) throw new Error('Cannot bind this Claude process to one live return address: several live Claude records claim its socket.');
+    if (!matches.length) throw new Error('Cannot bind this Claude process to one live return address.' + (registrationGap ? ' ' + registrationGap : ''));
     return matches[0]!;
   }
   if (env.CODEX_THREAD_ID && uuid.test(env.CODEX_THREAD_ID)) return exactPeer(peers.filter(p => p.provider === 'codex'), env.CODEX_THREAD_ID);
