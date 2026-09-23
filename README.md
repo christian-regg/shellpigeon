@@ -6,7 +6,7 @@ Exchange messages between ordinary local CLI sessions on Windows and Linux (incl
 
 Start your CLIs as usual, ask to list the other sessions, then send a message to an exact address from that list. No extra terminal, special launcher or mailbox registration is needed for this workflow.
 
-**Status: 0.5.0-preview.1 — Windows and Linux preview.** Licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
+**Status: 0.5.0-preview.2 — Windows and Linux preview.** Licensed under [MIT](LICENSE). [Deutsche Dokumentation](docs/codex-cli-operation.de.md)
 
 ## Delivery
 

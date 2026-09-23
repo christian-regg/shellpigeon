@@ -1,8 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.5.0-preview.2 — 2026-09-23
 
+- Explain a failed Claude return-address binding. Claude Code does not register an interactive session that inherited `CLAUDE_CODE_CHILD_SESSION`, for example one started from another Claude Code session's tool; such a session has no `sessions/<pid>.json` and cannot be reached by other sessions. `self`, `send` and `list` now name this cause and the remedy instead of only reporting "Cannot bind". Several records claiming one socket are reported separately.
+- Scope `list` and name resolution in `send` to the current session's project directory. The tool shell's current directory may have moved into a subdirectory and hid every session of the project.
 - Prepare verified Windows/Linux release drafts from version tags, with isolated installation checks on both CI platforms, matching source/package commits and manual publication.
+
+Validation: reproduced with Claude Code 2.1.280 on Windows. An interactive session with the inherited marker wrote no registry record; clearing the marker in its launcher restored registration and `self`. The new regression test fails before the fix.
 
 ## 0.5.0-preview.1 — 2026-09-20
 
