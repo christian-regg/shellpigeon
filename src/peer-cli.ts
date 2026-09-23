@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { discoverPeers, exactPeer, sourcePeer, sameDirectory } from './peer-discovery.js';
+import { claudeRegistrationGap, discoverPeers, exactPeer, sourcePeer, sameDirectory, type Peer } from './peer-discovery.js';
 import { sendPeer, DeliveryUnknown } from './peer-transport.js';
 import { peerListView } from './peer-presentation.js';
 
@@ -20,12 +20,17 @@ async function main() {
   if (verb === 'send' && (!target || !summary || (inline === undefined) === !values['message-file'] || positionals.length > 4)) {
     throw new Error('send requires exact target, summary and either one message argument or --message-file.');
   }
-  const discovery = await discoverPeers({all: true, provider: verb === 'doctor' ? 'codex' : verb === 'list' ? values.provider as 'claude' | 'codex' | undefined : undefined});
+  const provider = verb === 'doctor' ? 'codex' : verb === 'list' ? values.provider as 'claude' | 'codex' | undefined : undefined;
+  const discovery = await discoverPeers({all: true, provider});
+  const registrationGap = provider === 'codex' ? null : await claudeRegistrationGap();
+  if (registrationGap) discovery.diagnostics.push(registrationGap);
   if (verb === 'list') {
-    let currentAddress: string | null = null;
-    try { currentAddress = sourcePeer(discovery.peers).address; } catch { /* Discovery also works outside a host session. */ }
-    const peers = discovery.peers.filter(p => values.all || sameDirectory(p.cwd, process.cwd()));
-    console.log(JSON.stringify({...discovery, ...peerListView(peers, currentAddress)}, null, 2));
+    let current: Peer | null = null;
+    try { current = sourcePeer(discovery.peers, process.env, registrationGap); } catch { /* Discovery also works outside a host session. */ }
+    // The tool shell may have left the project directory; the project is the current session's directory.
+    const project = current?.cwd ?? process.cwd();
+    const peers = discovery.peers.filter(p => values.all || sameDirectory(p.cwd, project));
+    console.log(JSON.stringify({...discovery, ...peerListView(peers, current?.address ?? null)}, null, 2));
   } else if (verb === 'doctor') {
     console.log(JSON.stringify({codexEndpoints: discovery.codexEndpoints, diagnostics: discovery.diagnostics,
       nativePeers: discovery.peers.filter(p => p.transport === 'codex-native').map(p => p.address),
@@ -48,11 +53,11 @@ async function main() {
         'No daemon, model turn or persistent configuration was started or changed by this diagnosis.',
       ]}, null, 2));
   } else if (verb === 'self') {
-    console.log(JSON.stringify({address: sourcePeer(discovery.peers).address}));
+    console.log(JSON.stringify({address: sourcePeer(discovery.peers, process.env, registrationGap).address}));
   } else {
-    const candidates = discovery.peers.filter(p => values.all || p.address === target || p.id === target || sameDirectory(p.cwd, process.cwd()));
+    const source = sourcePeer(discovery.peers, process.env, registrationGap);
+    const candidates = discovery.peers.filter(p => values.all || p.address === target || p.id === target || sameDirectory(p.cwd, source.cwd));
     const peer = exactPeer(candidates, target!);
-    const source = sourcePeer(discovery.peers);
     const message = values['message-file'] ? await readFile(values['message-file'], 'utf8') : inline;
     console.log(JSON.stringify(await sendPeer(peer, source, summary!, message!, {mode: values.native ? 'native' : values.queue ? 'queue' : 'auto'}), null, 2));
   }

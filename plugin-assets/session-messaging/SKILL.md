@@ -18,7 +18,7 @@ The MCP tools `sessions_list`, `message_send`, `inbox_read` and `message_reply` 
 3. Send with `node <absolute-peer.cjs> send <address> <summary> <message>`. Use `--message-file <path>` for literal or multiline text whose shell quoting is uncertain.
 4. Report the actual receipt's `target`, `transport`, `state` and `delivery`. A send receipt is not evidence that the model read or answered the message.
 
-The helper binds the return address to the real current session. `self` checks that binding. Never substitute another session's environment, identity or credentials if it fails.
+The helper binds the return address to the real current session. `self` checks that binding. Never substitute another session's environment, identity or credentials if it fails. If it reports that Claude Code has not registered this session, the session was started from another Claude Code session's tool: other sessions cannot reach it either. Tell the user to restart it from an ordinary terminal or with `CLAUDE_CODE_CHILD_SESSION` cleared in its launcher.
 
 ## Presenting the session list
 

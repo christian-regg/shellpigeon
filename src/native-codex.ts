@@ -74,7 +74,7 @@ export class CodexRpc extends EventEmitter {
   }
   async initialize() {
     const result = await this.call('initialize', {
-      clientInfo: {name: 'agent-session-messaging', version: '0.5.0-preview.1'}, capabilities: {experimentalApi: true},
+      clientInfo: {name: 'agent-session-messaging', version: '0.5.0-preview.2'}, capabilities: {experimentalApi: true},
     });
     this.write({method: 'initialized'});
     return result;

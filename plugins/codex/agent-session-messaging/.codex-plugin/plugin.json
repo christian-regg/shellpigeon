@@ -1,6 +1,6 @@
 {
   "name": "agent-session-messaging",
-  "version": "0.5.0-preview.1",
+  "version": "0.5.0-preview.2",
   "description": "ShellPigeon: local messaging between Claude Code and Codex sessions, with optional durable mailboxes (Windows and Linux preview).",
   "author": {
     "name": "Christian"
